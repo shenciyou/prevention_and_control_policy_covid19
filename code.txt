@@ -1,0 +1,3630 @@
+/*区域和国家标序*/
+insheet using region_area.csv,names clear
+save region_area,replace
+clear
+unicode analyze region_area.dta
+unicode encoding set gb18030
+unicode retranslate region_area.dta,replace
+
+use region_area,clear
+gen area_id=.
+replace area_id=1 if area=="亚洲"
+replace area_id=2 if area=="欧洲"
+replace area_id=3 if area=="北美洲"
+replace area_id=4 if area=="南美洲"
+replace area_id=5 if area=="大洋洲"
+sort area_id region
+gen region_id=_n
+sort area_id region_id area region
+order area_id region_id area region
+save region_area,replace
+
+/*疫情数据预处理*/
+insheet using epidemicdatanew.csv,clear
+destring date,replace ignore("-")
+tostring date,replace
+gen date2=date(date,"YMD")
+format date2 %td
+drop date
+rename date2 date
+label var date "日期"
+order date
+save epidemicdata,replace
+
+use epidemicdata,clear
+destring new_confirmed*,replace ignore(",")
+reshape long new_confirmed,i(date) j(region)
+keep date region new_confirmed
+sort region date
+save epidemicdata_1,replace
+use epidemicdata,clear
+destring total_confirmed*,replace ignore(",")
+reshape long total_confirmed,i(date) j(region)
+keep date region total_confirmed
+sort region date
+save epidemicdata_2,replace
+use epidemicdata,clear
+destring new_deaths*,replace ignore(",")
+reshape long new_deaths,i(date) j(region)
+keep date region new_deaths
+sort region date
+save epidemicdata_3,replace
+use epidemicdata,clear
+destring total_deaths*,replace ignore(",")
+reshape long total_deaths,i(date) j(region)
+keep date region total_deaths
+sort region date
+save epidemicdata_4,replace
+use epidemicdata,clear
+destring new_recovered*,replace ignore(",")
+reshape long new_recovered,i(date) j(region)
+keep date region new_recovered
+sort region date
+save epidemicdata_5,replace
+use epidemicdata,clear
+destring total_recovered*,replace ignore(",")
+reshape long total_recovered,i(date) j(region)
+keep date region total_recovered
+sort region date
+save epidemicdata_6,replace
+use epidemicdata,clear
+destring new_suspected*,replace ignore(",")
+reshape long new_suspected,i(date) j(region)
+keep date region new_suspected
+sort region date
+save epidemicdata_7,replace
+use epidemicdata,clear
+destring total_suspected*,replace ignore(",")
+reshape long total_suspected,i(date) j(region)
+keep date region total_suspected
+sort region date
+save epidemicdata_8,replace
+use epidemicdata,clear
+destring new_severed*,replace ignore(",")
+reshape long new_severed,i(date) j(region)
+keep date region new_severed
+sort region date
+save epidemicdata_9,replace
+use epidemicdata,clear
+destring existing_severed*,replace ignore(",")
+reshape long existing_severed,i(date) j(region)
+keep date region existing_severed
+sort region date
+save epidemicdata_10,replace
+
+use epidemicdata_1,clear
+merge 1:1 region date using epidemicdata_2
+drop _merge
+merge 1:1 region date using epidemicdata_3
+drop _merge
+merge 1:1 region date using epidemicdata_4
+drop _merge
+merge 1:1 region date using epidemicdata_5
+drop _merge
+merge 1:1 region date using epidemicdata_6
+drop _merge
+merge 1:1 region date using epidemicdata_7
+drop _merge
+merge 1:1 region date using epidemicdata_8
+drop _merge
+merge 1:1 region date using epidemicdata_9
+drop _merge
+merge 1:1 region date using epidemicdata_10
+drop _merge
+rename region region_id
+sort region_id date
+save epidemicdata,replace
+
+insheet using epidemic_region.csv,clear
+save epidemic_region,replace
+clear
+unicode analyze epidemic_region.dta
+unicode encoding set gb18030
+unicode retranslate epidemic_region.dta,replace
+use epidemic_region,clear
+sort region_id
+save epidemic_region,replace
+
+use epidemicdata,clear
+merge m:1 region_id using epidemic_region
+drop _merge
+drop region_id
+order region date
+save epidemicdata,replace
+
+/*疫情发展概况*/
+use epidemicdata,clear
+sort region date
+merge m:1 region using region_area
+replace region_id=27 if region=="全球"
+replace region_id=28 if region=="全球不含中国"
+replace area_id=6 if region=="全球"
+replace area_id=6 if region=="全球不含中国"
+replace area="全球" if region=="全球"
+replace area="全球" if region=="全球不含中国"
+order area_id region_id area region date
+sort area_id region_id date
+save epidemicdata_stat,replace
+
+use epidemicdata_stat,clear
+keep region_id date new_confirmed
+sort region_id date
+reshape wide new_confirmed,i(date) j(region_id)
+export excel using new_confirmed.xls,replace firstrow(variables)
+
+use epidemicdata_stat,clear
+keep region_id date total_confirmed
+sort region_id date
+reshape wide total_confirmed,i(date) j(region_id)
+export excel using total_confirmed.xls,replace firstrow(variables)
+
+use epidemicdata_stat,clear
+keep region_id date new_deaths
+sort region_id date
+reshape wide new_deaths,i(date) j(region_id)
+export excel using new_deaths.xls,replace firstrow(variables)
+
+use epidemicdata_stat,clear
+keep region_id date total_deaths
+sort region_id date
+reshape wide total_deaths,i(date) j(region_id)
+export excel using total_deaths.xls,replace firstrow(variables)
+
+/*此段已废弃
+use epidemicdata_stat,clear
+replace new_confirmed=new_confirmed/10000
+replace total_confirmed=total_confirmed/10000
+keep if area_id==1
+line new_confirmed1 date
+line new_confirmed2 date,by(region) 
+line new_confirmed date||line total_confirmed date,by(region) 
+*/
+
+/*判断疫情发展阶段*/
+use epidemicdata,clear
+sort region date
+merge m:1 region using region_area
+keep if _merge==3
+drop _merge
+order area_id region_id area region date
+sort region_id date
+by region_id,sort:gen ndate=_n
+sort region_id ndate
+tsset region_id ndate
+gen ntrate_confirmed=new_confirmed/total_confirmed
+by region_id:movavg new_confirmed_ma7= new_confirmed,lag(7)
+by region_id:gen dnew_confirmed_ma7=d.new_confirmed_ma7
+by region_id:gen ddnew_confirmed_ma7=d2.new_confirmed_ma7
+gen period=0
+replace new_confirmed=0 if new_confirmed==.
+order area_id region_id area region date period new_confirmed total_confirmed ntrate_confirmed new_confirmed_ma7 dnew_confirmed_ma7 ddnew_confirmed_ma7
+
+replace period=1 if new_confirmed>=100 & ntrate_confirmed>=0.1 & dnew_confirmed_ma7>=0
+replace period=2 if new_confirmed>=100 & ntrate_confirmed<0.1 & dnew_confirmed_ma7<0
+replace period=3 if new_confirmed<100 & ntrate_confirmed<0.01 & dnew_confirmed_ma7<0
+tsset region_id ndate
+//by region_id:gen flag=d.period
+//gen flag=.
+order area_id region_id area region date period new_confirmed total_confirmed ntrate_confirmed new_confirmed_ma7 dnew_confirmed_ma7 ddnew_confirmed_ma7
+save epidemicdata2,replace
+
+/*判断疫情发展阶段-个别国家绘图*/
+use epidemicdata2,replace
+keep if region=="中国"
+keep date period ntrate_confirmed new_confirmed dnew_confirmed_ma7
+order date period ntrate_confirmed new_confirmed dnew_confirmed_ma7
+
+use epidemicdata2,replace
+keep if region=="韩国"
+keep date period ntrate_confirmed new_confirmed dnew_confirmed_ma7
+order date period ntrate_confirmed new_confirmed dnew_confirmed_ma7
+
+use epidemicdata2,replace
+keep if region=="意大利"
+keep date period ntrate_confirmed new_confirmed dnew_confirmed_ma7
+order date period ntrate_confirmed new_confirmed dnew_confirmed_ma7
+
+use epidemicdata2,replace
+keep if region=="美国"
+keep date period ntrate_confirmed new_confirmed dnew_confirmed_ma7
+order date period ntrate_confirmed new_confirmed dnew_confirmed_ma7
+
+use epidemicdata2,replace
+keep if region=="加拿大"
+keep date period ntrate_confirmed new_confirmed dnew_confirmed_ma7
+order date period ntrate_confirmed new_confirmed dnew_confirmed_ma7
+
+use epidemicdata2,replace
+keep if region=="巴西"
+keep date period ntrate_confirmed new_confirmed dnew_confirmed_ma7
+order date period ntrate_confirmed new_confirmed dnew_confirmed_ma7
+
+use epidemicdata2,replace
+keep if region=="澳大利亚"
+keep date period ntrate_confirmed new_confirmed dnew_confirmed_ma7
+order date period ntrate_confirmed new_confirmed dnew_confirmed_ma7
+
+/*市场数据预处理*/
+insheet using stockmarketdata.csv,clear
+tostring date,replace
+gen date2=date(date,"YMD")
+format date2 %td
+drop date
+rename date2 date
+label var date "日期"
+gen stockreturn=(close-lagclose)/lagclose
+save stockmarketdata,replace
+
+use stockmarketdata,clear
+keep if region=="中国"
+sort stockcode date
+egen index_id=group(stockcode)
+save smd_china,replace
+use smd_china,clear
+keep if index_id==1
+rename stockreturn stockreturn1
+rename marketvalue marketvalue1
+sort date
+save smd_china1,replace
+use smd_china,clear
+keep if index_id==2
+rename stockreturn stockreturn2
+rename marketvalue marketvalue2
+sort date
+save smd_china2,replace
+
+use smd_china1,clear
+merge 1:1 date using smd_china2
+gen mvp1=marketvalue1/(marketvalue1+marketvalue2)
+gen mvp2=marketvalue2/(marketvalue1+marketvalue2)
+gen stockreturn=stockreturn1*mvp1+stockreturn2*mvp2
+
+replace stockcode="SHSZ.GI"
+replace stockname="上深加权指数"
+keep region stockcode stockname date stockreturn
+order region stockcode stockname date stockreturn
+save stockmarketdata_china,replace
+
+use stockmarketdata,clear
+keep region stockcode stockname date stockreturn
+order region stockcode stockname date stockreturn
+drop if region=="中国"
+append using stockmarketdata_china
+sort region date
+save stockmarketdata,replace
+
+insheet using bondmarketdata.csv,clear
+tostring date,replace
+gen date2=date(date,"YMD")
+format date2 %td
+drop date
+rename date2 date
+label var date "日期"
+sort region date
+gen bondreturn=close/100
+keep region date bondreturn
+replace region="台湾" if region=="台湾2年期"
+replace region="荷兰" if region=="荷兰2年"
+keep if region=="阿根廷" | region=="奥地利" | region=="澳大利亚" | region=="巴西" | region=="比利时" | region=="德国" | region=="俄罗斯" | region=="法国" | region=="菲律宾" | region=="韩国" | region=="加拿大" | region=="马来西亚" | region=="美国" | region=="挪威" | region=="日本" | region=="泰国" | region=="西班牙" | region=="香港" | region=="新加坡" | region=="新西兰" | region=="以色列" | region=="意大利" | region=="印度" | region=="印度尼西亚" | region=="英国" | region=="中国" 
+sort region date
+merge m:1 region using region_area
+drop _merge
+order area_id region_id area region date
+sort region_id date
+save bondmarketdata,replace
+
+//egen region_id=group(region)
+//by region_id,sort:gen ndate=_n
+//sort region_id ndate
+//tsset region_id ndate
+//gen bondreturn=(close-l.close)/l.close
+
+use stockmarketdata,clear
+drop if stockname=="道琼斯工业平均"|stockname=="纳斯达克100"|stockname=="纳斯达克综指"|stockname=="美国证交所综指"|stockname=="纽约证交所综指"|stockname=="西班牙SMSI"
+keep if region=="阿根廷" | region=="奥地利" | region=="澳大利亚" | region=="巴西" | region=="比利时" | region=="德国" | region=="俄罗斯" | region=="法国" | region=="菲律宾" | region=="韩国" | region=="加拿大" | region=="马来西亚" | region=="美国" | region=="挪威" | region=="日本" | region=="泰国" | region=="西班牙" | region=="香港" | region=="新加坡" | region=="新西兰" | region=="以色列" | region=="意大利" | region=="印度" | region=="印度尼西亚" | region=="英国" | region=="中国" 
+sort region date
+merge m:1 region using region_area
+drop _merge
+order area_id region_id area region date
+save stockmarketdata2,replace
+
+use stockmarketdata2,clear
+duplicates drop region_id,force
+keep area_id area region_id region stockcode stockname
+order area_id area region_id region stockcode stockname
+sort area_id region_id
+save stockmarketindex,replace
+export excel using stockmarketindex.xls,replace firstrow(variables)
+
+use stockmarketdata2,clear
+sort region_id date
+merge 1:1 region_id date using bondmarketdata
+drop _merge
+drop stockcode stockname
+order area_id region_id area region date stockreturn bondreturn
+sort region_id date
+save marketdata_all,replace
+
+//导入手动标识的疫情拐点
+insheet using epidemic_inflexion.csv,clear
+save epidemic_inflexion,replace
+clear
+unicode analyze epidemic_inflexion.dta
+unicode encoding set gb18030
+unicode retranslate epidemic_inflexion.dta,replace
+
+use epidemic_inflexion,clear
+tostring date,replace
+gen date2=date(date,"YMD")
+format date2 %td
+drop date
+rename date2 date
+label var date "日期"
+order area_id region_id area region date flag
+sort region_id date
+save epidemic_inflexion,replace
+
+
+/*融入疫情发展阶段数据*/
+use marketdata_all,clear
+drop if date<date("10/1/2019","MDY",2019)
+sort region_id date
+by region_id,sort:gen ndate=_n
+sort region_id ndate
+tsset region_id ndate
+gen dstockreturn=d.stockreturn
+gen dbondreturn=d.bondreturn
+save marketdata,replace
+
+use marketdata,clear
+sort region date
+merge 1:1 region_id date using epidemic_inflexion
+drop _merge
+sort region_id date
+by region_id:gen target=date if flag==1
+egen targetdate=min(target),by(region_id)
+format targetdate %td
+gen dif=date-targetdate
+gen period="潜伏期"
+replace period="爆发期" if dif>=0
+drop target targetdate dif
+by region_id:gen target=date if flag==2
+egen targetdate=min(target),by(region_id)
+format targetdate %td
+gen dif=date-targetdate
+replace period="平稳期" if dif>=0 & dif!=.
+drop target targetdate dif
+by region_id:gen target=date if flag==3
+egen targetdate=min(target),by(region_id)
+format targetdate %td
+gen dif=date-targetdate
+replace period="消退期" if dif>=0 & dif!=.
+drop target targetdate dif
+save marketdata,replace
+
+/*疫情发展阶段绘图*/
+use marketdata,clear
+keep region_id date period
+sort region_id date
+reshape wide period,i(date) j(region_id)
+export excel using period.xls,replace firstrow(variables)
+
+/*融入疫情发展阶段虚拟变量*/
+
+//期限补齐后重新导入
+insheet using period_complemented.csv,clear
+save period_complemented,replace
+clear
+unicode analyze period_complemented.dta
+unicode encoding set gb18030
+unicode retranslate period_complemented.dta,replace
+
+use period_complemented,clear
+tostring date,replace
+gen date2=date(date,"YMD")
+format date2 %td
+drop date
+rename date2 date
+label var date "日期"
+reshape long period,i(date) j(region_id)
+sort region_id date
+order region_id date
+gen period_id=1 if period=="潜伏期"
+replace period_id=2 if period=="爆发期"
+replace period_id=3 if period=="平稳期"
+replace period_id=4 if period=="消退期"
+save period_complemented,replace
+
+//生成虚拟变量
+use period_complemented,clear
+sort region_id date
+by region_id,sort:gen ndate=_n
+sort region_id period_id ndate
+egen region_period_id=group(region_id period_id)
+by region_period_id,sort:egen dmax=max(ndate) if period_id==2
+by region_id,sort:egen dturnpoint=mean(dmax)
+gen dummy=0 if period_id==1
+replace dummy=1 if period_id==2
+replace dummy=1/(ndate+1-dturnpoint) if period_id==3
+replace dummy=1/((ndate+1-dturnpoint)^2) if period_id==4
+drop dmax dturnpoint
+keep region_id date period_id dummy
+sort region_id date
+save period_dummy,replace
+
+//融入虚拟变量
+use marketdata,clear
+sort region_id date
+merge 1:1 region_id date using period_dummy
+keep if _merge==3
+drop _merge
+sort region_id date
+save marketdata,replace
+
+
+/*描述性统计-绘图*/
+use marketdata,clear
+sort region_id ndate
+tsset region_id ndate
+
+//绘图：全球股票市场收益率
+line stockreturn date,by(area region) xtitle("全球股票市场收益率") ytitle("Stock_Return") saving(stock_return_global,replace)
+//然后打开图片编辑器，修改图片note后保存(隐藏"Graphs by area and region") 
+graph use stock_return_global
+graph export stock_return_global.png, as(png) replace
+
+//绘图：全球债券市场收益率
+//阿根廷清零
+replace bondreturn=0 if region=="阿根廷"
+line bondreturn date,by(area region) xtitle("全球债券市场收益率") ytitle("Bond_Return") saving(bond_return_global,replace)
+//然后打开图片编辑器，修改图片note后保存(隐藏"Graphs by area and region") 
+graph use bond_return_global
+graph export bond_return_global.png, as(png) replace
+//阿根廷重绘并PS进去
+use marketdata,clear
+sort region_id ndate
+tsset region_id ndate
+keep if region=="阿根廷"
+line bondreturn date,by(area region) xtitle("阿根廷债券市场收益率") ytitle("Bond_Return") saving(bond_return_argentina,replace)
+
+/*描述性统计-按年月统计均值和标准差*/
+use marketdata,clear
+sort region_id ndate
+gen year=year(date)
+gen month=month(date)
+sort region_id year month ndate
+egen rym_id=group(region_id year month)
+by rym_id,sort:egen stock_rym_mean=mean(stockreturn)
+by rym_id,sort:egen stock_rym_std=sd(stockreturn)
+by rym_id,sort:egen bond_rym_mean=mean(bondreturn)
+by rym_id,sort:egen bond_rym_std=sd(bondreturn)
+duplicates drop rym_id,force
+sort region_id rym_id
+by region_id,sort:gen rymid=_n
+tostring year,replace
+tostring month,replace
+replace month=substr("00"+month,-2,2)
+gen ym=year+month
+save marketdata_rym,replace
+
+use marketdata_rym,clear
+keep region_id rymid stock_rym_mean
+sort rymid region_id
+reshape wide stock_rym_mean,i(rymid) j(region_id)
+export excel using stock_rym_mean.xls,replace firstrow(variables)
+
+use marketdata_rym,clear
+keep region_id rymid stock_rym_std
+sort rymid region_id
+reshape wide stock_rym_std,i(rymid) j(region_id)
+export excel using stock_rym_std.xls,replace firstrow(variables)
+
+use marketdata_rym,clear
+keep region_id rymid bond_rym_mean
+sort rymid region_id
+reshape wide bond_rym_mean,i(rymid) j(region_id)
+export excel using bond_rym_mean.xls,replace firstrow(variables)
+
+use marketdata_rym,clear
+keep region_id rymid bond_rym_std
+sort rymid region_id
+reshape wide bond_rym_std,i(rymid) j(region_id)
+export excel using bond_rym_std.xls,replace firstrow(variables)
+
+/*描述性统计-输出统计量*/
+use marketdata,clear
+sort region_id ndate
+tsset region_id ndate
+egen idmax=max(region_id)
+global idmax=idmax
+matrix N=J($idmax,1,.)
+matrix Mean=J($idmax,1,.)
+matrix Median=J($idmax,1,.)
+matrix Max=J($idmax,1,.)
+matrix Min=J($idmax,1,.)
+matrix StdDev=J($idmax,1,.)
+matrix Skewness=J($idmax,1,.)
+matrix Kurtosis=J($idmax,1,.)
+set more off
+forvalues i=1/$idmax {
+sum stockreturn if region_id==`i', detail 
+matrix N[`i',1]=r(N)
+matrix Mean[`i',1]=r(mean)
+matrix Median[`i',1]=r(p50)
+matrix Max[`i',1]=r(max)
+matrix Min[`i',1]=r(min)
+matrix StdDev[`i',1]=r(sd)
+matrix Skewness[`i',1]=r(skewness)
+matrix Kurtosis[`i',1]=r(kurtosis)
+}
+drop *
+svmat double N,name(N)
+svmat double Mean,name(Mean)
+svmat double Median,name(Median)
+svmat double Max,name(Max)
+svmat double Min,name(Min)
+svmat double StdDev,name(StdDev)
+svmat double Skewness,name(Skewness)
+svmat double Kurtosis,name(Kurtosis)
+rename N1 N
+rename Mean1 Mean
+rename Median1 Median
+rename Max1 Max
+rename Min1 Min
+rename StdDev1 StdDev
+rename Skewness1 Skewness
+rename Kurtosis1 Kurtosis
+save descriptivestats_for_stockmarket,replace
+
+use marketdata,clear
+sort region_id ndate
+tsset region_id ndate
+egen idmax=max(region_id)
+global idmax=idmax
+matrix N=J($idmax,1,.)
+matrix Mean=J($idmax,1,.)
+matrix Median=J($idmax,1,.)
+matrix Max=J($idmax,1,.)
+matrix Min=J($idmax,1,.)
+matrix StdDev=J($idmax,1,.)
+matrix Skewness=J($idmax,1,.)
+matrix Kurtosis=J($idmax,1,.)
+set more off
+forvalues i=1/$idmax {
+sum bondreturn if region_id==`i', detail 
+matrix N[`i',1]=r(N)
+matrix Mean[`i',1]=r(mean)
+matrix Median[`i',1]=r(p50)
+matrix Max[`i',1]=r(max)
+matrix Min[`i',1]=r(min)
+matrix StdDev[`i',1]=r(sd)
+matrix Skewness[`i',1]=r(skewness)
+matrix Kurtosis[`i',1]=r(kurtosis)
+}
+drop *
+svmat double N,name(N)
+svmat double Mean,name(Mean)
+svmat double Median,name(Median)
+svmat double Max,name(Max)
+svmat double Min,name(Min)
+svmat double StdDev,name(StdDev)
+svmat double Skewness,name(Skewness)
+svmat double Kurtosis,name(Kurtosis)
+rename N1 N
+rename Mean1 Mean
+rename Median1 Median
+rename Max1 Max
+rename Min1 Min
+rename StdDev1 StdDev
+rename Skewness1 Skewness
+rename Kurtosis1 Kurtosis
+save descriptivestats_for_bondmarket,replace
+
+/*单位根检验*/
+use marketdata,clear
+sort region_id ndate
+tsset region_id ndate
+egen idmax=max(region_id)
+global idmax=idmax
+matrix TV_ADF=J($idmax,1,.)
+matrix PV_ADF=J($idmax,1,.)
+matrix TV_PP=J($idmax,1,.)
+matrix PV_PP=J($idmax,1,.)
+set more off
+forvalues i=1/$idmax {
+dfuller stockreturn if region_id==`i'
+matrix TV_ADF[`i',1]=r(Zt) 
+matrix PV_ADF[`i',1]=r(p)
+pperron stockreturn if region_id==`i'
+matrix TV_PP[`i',1]=r(Zt) 
+matrix PV_PP[`i',1]=r(pval)
+}
+matrix list TV_ADF
+matrix list PV_ADF
+matrix list TV_PP
+matrix list PV_PP
+drop *
+svmat double TV_ADF,name(TV_ADF)
+svmat double PV_ADF,name(PV_ADF)
+svmat double TV_PP,name(TV_PP)
+svmat double PV_PP,name(PV_PP)
+rename TV_ADF1 TV_ADF
+rename PV_ADF1 PV_ADF
+rename TV_PP1 TV_PP
+rename PV_PP1 PV_PP
+gen iADF="stationary" if PV_ADF<=0.05
+replace iADF="unitroot" if PV_ADF>0.05
+gen iPP="stationary" if PV_PP<=0.05
+replace iPP="unitroot" if PV_PP>0.05
+
+count if iADF=="stationary"
+scalar iADF_stationary=r(N)
+count if iADF=="unitroot"
+scalar iADF_unitroot=r(N)
+count if iPP=="stationary"
+scalar iPP_stationary=r(N)
+count if iPP=="unitroot"
+scalar iPP_unitroot=r(N)
+scalar list iADF_stationary iADF_unitroot iPP_stationary iPP_unitroot
+save unitroottest_for_stockmarket,replace
+
+use marketdata,clear
+sort region_id ndate
+tsset region_id ndate
+egen idmax=max(region_id)
+global idmax=idmax
+matrix TV_ADF=J($idmax,1,.)
+matrix PV_ADF=J($idmax,1,.)
+matrix TV_PP=J($idmax,1,.)
+matrix PV_PP=J($idmax,1,.)
+set more off
+forvalues i=1/$idmax {
+dfuller bondreturn if region_id==`i'
+matrix TV_ADF[`i',1]=r(Zt) 
+matrix PV_ADF[`i',1]=r(p)
+pperron bondreturn if region_id==`i'
+matrix TV_PP[`i',1]=r(Zt) 
+matrix PV_PP[`i',1]=r(pval)
+}
+matrix list TV_ADF
+matrix list PV_ADF
+matrix list TV_PP
+matrix list PV_PP
+drop *
+svmat double TV_ADF,name(TV_ADF)
+svmat double PV_ADF,name(PV_ADF)
+svmat double TV_PP,name(TV_PP)
+svmat double PV_PP,name(PV_PP)
+rename TV_ADF1 TV_ADF
+rename PV_ADF1 PV_ADF
+rename TV_PP1 TV_PP
+rename PV_PP1 PV_PP
+gen iADF="stationary" if PV_ADF<=0.05
+replace iADF="unitroot" if PV_ADF>0.05
+gen iPP="stationary" if PV_PP<=0.05
+replace iPP="unitroot" if PV_PP>0.05
+
+count if iADF=="stationary"
+scalar iADF_stationary=r(N)
+count if iADF=="unitroot"
+scalar iADF_unitroot=r(N)
+count if iPP=="stationary"
+scalar iPP_stationary=r(N)
+count if iPP=="unitroot"
+scalar iPP_unitroot=r(N)
+scalar list iADF_stationary iADF_unitroot iPP_stationary iPP_unitroot
+save unitroottest_for_bondmarket,replace
+
+/*GARCH模型*/
+use marketdata,clear
+sort region_id ndate
+tsset region_id ndate
+egen idmax=max(region_id)
+global idmax=idmax
+set more off
+by region_id:ipolate stockreturn date,epolate gen(stockreturn_fill)
+drop stockreturn
+rename stockreturn_fill stockreturn
+by region_id:egen stockreturn_mean=mean(stockreturn)
+gen stockreturn_demean=stockreturn-stockreturn_mean
+
+by region_id:ipolate bondreturn date,epolate gen(bondreturn_fill)
+drop bondreturn
+rename bondreturn_fill bondreturn
+by region_id:egen bondreturn_mean=mean(bondreturn)
+gen bondreturn_demean=bondreturn-bondreturn_mean
+
+gen stockgarch=.
+forvalues i=1/$idmax {
+display "id=",`i'
+arch stockreturn_demean if region_id==`i',arch(1) garch(1)
+est store stockgarch_model`i'
+predict stockgarch`i' if region_id==`i',variance
+replace stockgarch=stockgarch`i' if region_id==`i'
+}
+
+gen bondgarch=.
+forvalues i=1/10 {
+display "id=",`i'
+arch bondreturn_demean if region_id==`i',arch(1) garch(1)
+est store bondgarch_model`i'
+predict bondgarch`i' if region_id==`i',variance
+replace bondgarch=bondgarch`i' if region_id==`i'
+}
+forvalues i=12/$idmax {
+display "id=",`i'
+arch bondreturn_demean if region_id==`i',arch(1) garch(1)
+est store bondgarch_model`i'
+predict bondgarch`i' if region_id==`i',variance
+replace bondgarch=bondgarch`i' if region_id==`i'
+}
+
+outreg2 [stockgarch_model1 stockgarch_model2 stockgarch_model3 stockgarch_model4 stockgarch_model5 stockgarch_model6 stockgarch_model7 stockgarch_model8 stockgarch_model9 stockgarch_model10 stockgarch_model11 stockgarch_model12 stockgarch_model13 stockgarch_model14 stockgarch_model15 stockgarch_model16 stockgarch_model17 stockgarch_model18 stockgarch_model19 stockgarch_model20 stockgarch_model21 stockgarch_model22 stockgarch_model23 stockgarch_model24 stockgarch_model25 stockgarch_model26] using stockgarch_models.doc,bdec(4) replace word
+
+outreg2 [bondgarch_model1 bondgarch_model2 bondgarch_model3 bondgarch_model4 bondgarch_model5 bondgarch_model6 bondgarch_model7 bondgarch_model8 bondgarch_model9 bondgarch_model10 bondgarch_model12 bondgarch_model13 bondgarch_model14 bondgarch_model15 bondgarch_model16 bondgarch_model17 bondgarch_model18 bondgarch_model19 bondgarch_model20 bondgarch_model21 bondgarch_model22 bondgarch_model23 bondgarch_model24 bondgarch_model25 bondgarch_model26] using bondgarch_models.doc,bdec(4) replace word
+
+rename stockgarch stockht
+rename bondgarch bondht
+drop stockgarch*
+drop bondgarch*
+drop _est*
+rename stockht stockgarch
+rename bondht bondgarch
+save marketgarchdata,replace
+
+
+
+/*GARCH波动率序列作图*/
+//绘图：股票市场GARCH
+use marketgarchdata,clear
+line stockgarch date,by(area region) xtitle("股票市场动态波动率") ytitle("Stock_GARCH") saving(stock_garch_global,replace)
+//然后打开图片编辑器，修改图片note后保存(隐藏note) 
+graph use stock_garch_global
+graph export stock_garch_global.png, as(png) replace
+
+
+//绘图：债券市场GARCH
+//阿根廷清零
+use marketgarchdata,clear
+replace bondgarch=0 if region=="阿根廷"
+line bondgarch date,by(area region) xtitle("债券市场动态波动率") ytitle("Bond_GARCH") saving(bond_garch_global,replace)
+//然后打开图片编辑器，修改图片note后保存(隐藏note) 
+graph use bond_garch_global
+graph export bond_garch_global.png, as(png) replace
+//阿根廷重绘并PS进去
+use marketgarchdata,clear
+keep if region=="阿根廷"
+line bondgarch date,by(area region) xtitle("阿根廷债券市场动态波动率") ytitle("Bond_GARCH") saving(bond_garch_argentina,replace)
+
+
+/*市场数据融入波动率数据*/
+use marketgarchdata,clear
+keep region_id date stockgarch bondgarch
+sort region_id date
+save marketgarchdata_for_merge,replace
+
+use marketdata,clear
+sort region_id date
+merge 1:1 region_id date using marketgarchdata_for_merge
+drop _merge
+save marketdata,replace
+
+
+//以下废弃
+by region_id:arch stockreturn,arch(1/1) garch(1/1) het(dummy)
+predict stockgarch,variance
+
+by region_id:arch stockreturn,arch(1/1) garch(1/1)
+predict stockforgarch,variance
+
+line stockgarch date,by(region)
+
+by region_id:arch stockreturn,arch(1/1) garch(1/1) tarch(1/1)
+by region_id:arch stockreturn,arima(1,1,1) arch(1) garch(1)
+
+forvalues i=1/$idmax {
+by region_id:arch stockreturn,arch(1/1) garch(1/1)
+predict stockgarch,variance
+line stockgarch date,by(region)
+by region_id:arch bondreturn,arch(1/1) garch(1/1)
+predict bondgarch,variance
+line bondgarch date,by(region)
+
+save marketgarchdata,replace
+
+/*GARCH、TARCH、EGARCH过程-提取波动率数据（已废弃）*/
+use marketdata,clear
+keep date region_id stockreturn
+sort date region_id
+reshape wide stockreturn,i(date) j(region_id)
+sort date
+save daily_stockreturn,replace
+export excel using daily_stockreturn.xls,replace firstrow(variables)
+
+use daily_stockreturn,clear
+sort date
+tsset date
+set more off
+forvalues i=1/26 {
+ipolate stockreturn`i' date,epolate gen(stockreturn`i'_fill)
+drop stockreturn`i'
+rename stockreturn`i'_fill stockreturn`i'
+egen stockreturn_mean`i'=mean(stockreturn`i')
+gen stockreturn_demean`i'=stockreturn`i'-stockreturn_mean`i'
+}
+save daily_stockreturn,replace
+
+use daily_stockreturn,clear
+forvalues i=1/26 {
+display "id=",`i'
+arch stockreturn_demean`i', arch(1) garch(1)
+predict stockgarch`i',variance
+}
+keep date stockgarch*
+sort date
+reshape long stockgarch,i(date) j(region_id)
+sort region_id date
+save stockgarchdata,replace
+
+use daily_stockreturn,clear
+forvalues i=1/26 {
+display "id=",`i'
+arch stockreturn_demean`i', arch(1) garch(1) tarch(1)
+predict stocktarch`i',variance
+}
+keep date stocktarch*
+sort date
+reshape long stocktarch,i(date) j(region_id)
+sort region_id date
+save stocktarchdata,replace
+
+use daily_stockreturn,clear
+forvalues i=1/11 {
+display "id=",`i'
+arch stockreturn_demean`i', earch(1) egarch(1)
+predict stockegarch`i',variance
+}
+forvalues i=13/25 {
+display "id=",`i'
+arch stockreturn_demean`i', earch(1) egarch(1)
+predict stockegarch`i',variance
+}
+keep date stockegarch*
+sort date
+reshape long stockegarch,i(date) j(region_id)
+sort region_id date
+save stockegarchdata,replace
+
+use stockgarchdata,clear
+merge 1:1 region_id date using stocktarchdata
+drop _merge
+merge 1:1 region_id date using stockegarchdata
+drop _merge
+sort region_id date
+save stockgarchdata,replace
+
+
+use marketdata,clear
+keep date region_id bondreturn
+sort date region_id
+reshape wide bondreturn,i(date) j(region_id)
+sort date
+save daily_bondreturn,replace
+export excel using daily_bondreturn.xls,replace firstrow(variables)
+
+use daily_bondreturn,clear
+sort date
+tsset date
+set more off
+forvalues i=1/26 {
+ipolate bondreturn`i' date,epolate gen(bondreturn`i'_fill)
+drop bondreturn`i'
+rename bondreturn`i'_fill bondreturn`i'
+egen bondreturn_mean`i'=mean(bondreturn`i')
+gen bondreturn_demean`i'=bondreturn`i'-bondreturn_mean`i'
+}
+save daily_bondreturn,replace
+
+use daily_bondreturn,clear
+forvalues i=1/26 {
+display "id=",`i'
+arch bondreturn_demean`i', arch(1) garch(1)
+predict bondgarch`i',variance
+}
+keep date bondgarch*
+sort date
+reshape long bondgarch,i(date) j(region_id)
+sort region_id date
+save bondgarchdata,replace
+
+use daily_bondreturn,clear
+forvalues i=1/26 {
+display "id=",`i'
+arch bondreturn_demean`i', arch(1) garch(1) tarch(1)
+predict bondtarch`i',variance
+}
+keep date bondtarch*
+sort date
+reshape long bondtarch,i(date) j(region_id)
+sort region_id date
+save bondtarchdata,replace
+
+use daily_bondreturn,clear
+forvalues i=1/11 {
+display "id=",`i'
+arch bondreturn_demean`i', earch(1) egarch(1)
+predict bondegarch`i',variance
+}
+forvalues i=13/25 {
+display "id=",`i'
+arch bondreturn_demean`i', earch(1) egarch(1)
+predict bondegarch`i',variance
+}
+keep date bondegarch*
+sort date
+reshape long bondegarch,i(date) j(region_id)
+sort region_id date
+save bondegarchdata,replace
+
+use bondgarchdata,clear
+merge 1:1 region_id date using bondtarchdata
+drop _merge
+merge 1:1 region_id date using bondegarchdata
+drop _merge
+sort region_id date
+save bondgarchdata,replace
+
+
+/*事件数据预处理*/
+insheet using eventdata_region.csv,clear
+save eventdata_region,replace
+clear
+unicode analyze eventdata_region.dta
+unicode encoding set gb18030
+unicode retranslate eventdata_region.dta,replace
+use eventdata_region,clear
+destring date,replace ignore("-")
+tostring date,replace
+gen date2=date(date,"YMD")
+format date2 %td
+drop date
+rename date2 date
+label var date "日期"
+order region date type1 type2 global weight
+sort region date
+tostring comment,replace
+save eventdata_region,replace
+
+insheet using eventdata_global.csv,clear
+save eventdata_global,replace
+clear
+unicode analyze eventdata_global.dta
+unicode encoding set gb18030
+unicode retranslate eventdata_global.dta,replace
+use eventdata_global,clear
+destring date,replace ignore("-")
+tostring date,replace
+gen date2=date(date,"YMD")
+format date2 %td
+drop date
+rename date2 date
+label var date "日期"
+order region date type1 type2 global weight
+sort region date
+save eventdata_global,replace
+
+use eventdata_region,clear
+append using eventdata_global
+sort region date
+merge m:1 region using region_area
+drop _merge
+sort area_id region_id area region date
+order area_id region_id area region date
+save eventdata,replace
+
+/*隔离和经济数据集生成*/
+use eventdata,clear
+keep if type1=="隔离"
+sort area_id region_id date
+egen eventdate_id=group(area_id region_id date)
+order area_id region_id area region date eventdate_id
+by eventdate_id,sort:egen dweight=sum(weight) 
+duplicates drop eventdate_id,force
+sort area_id region_id eventdate_id
+by area_id region_id,sort:gen regionevent_id=_n
+by area_id region_id,sort:egen tweight=sum(dweight)
+order area_id region_id area region date eventdate_id regionevent_id type1 type2 global weight dweight tweight
+keep area_id region_id area region date eventdate_id regionevent_id type1 type2 dweight tweight
+rename date eventdate
+sort region_id eventdate_id
+save eventdata_isolation,replace
+
+use eventdata,clear
+keep if type1=="经济"
+sort area_id region_id date
+egen eventdate_id=group(area_id region_id date)
+order area_id region_id area region date eventdate_id
+by eventdate_id,sort:egen dweight=sum(weight) 
+duplicates drop eventdate_id,force
+sort area_id region_id eventdate_id
+by area_id region_id,sort:gen regionevent_id=_n
+by area_id region_id,sort:egen tweight=sum(dweight)
+order area_id region_id area region date eventdate_id regionevent_id type1 type2 global weight dweight tweight
+keep area_id region_id area region date eventdate_id regionevent_id type1 type2 dweight tweight
+rename date eventdate
+sort region_id eventdate_id
+save eventdata_economy,replace
+
+
+/*事件I、II类型标识与统计*/
+use eventdata_isolation,clear
+gen type2_id=.
+replace type2_id=1 if type2=="政府应急响应"
+replace type2_id=2 if type2=="体育赛事取消或延期"
+replace type2_id=3 if type2=="公共场所限制"
+replace type2_id=4 if type2=="边境限制"
+replace type2_id=5 if type2=="出行限制"
+replace type2_id=6 if type2=="出行解封"
+replace type2_id=7 if type2=="总统病毒检测"
+replace type2_id=8 if type2=="病毒检测"
+replace type2_id=9 if type2=="医院扩建"
+replace type2_id=10 if type2=="疫苗研制"
+replace type2_id=11 if type2=="公共场所解封"
+replace type2_id=12 if type2=="军事计划暂停或撤离"
+sort type1 type2_id
+by type2_id,sort:gen count=_N
+duplicates drop type2_id,force
+keep type1 type2 type2_id count
+save eventtype_isolation,replace
+export excel using eventtype_isolation.xls,replace firstrow(variables)
+
+use eventdata_economy,clear
+gen type2_id=.
+replace type2_id=1 if type2=="财政刺激政策"
+replace type2_id=2 if type2=="银行规则修改"
+replace type2_id=3 if type2=="公开市场操作"
+replace type2_id=4 if type2=="社会福利与补贴"
+replace type2_id=5 if type2=="降准降息"
+replace type2_id=6 if type2=="利率调整"
+replace type2_id=7 if type2=="发债"
+replace type2_id=8 if type2=="外汇便利"
+replace type2_id=9 if type2=="禁止做空"
+replace type2_id=10 if type2=="停发股息"
+replace type2_id=11 if type2=="货币政策宽松"
+sort type1 type2_id
+by type2_id,sort:gen count=_N
+duplicates drop type2_id,force
+keep type1 type2 type2_id count
+save eventtype_economy,replace
+export excel using eventtype_economy.xls,replace firstrow(variables)
+
+/*生成事件日计数器*/
+use eventdata_isolation, clear
+by region_id,sort: gen isolation_eventcount=_N
+by region_id: keep if _n==1
+sort region_id region isolation_eventcount
+keep region_id region isolation_eventcount
+save isolation_eventcount,replace
+
+use eventdata_economy, clear
+by region_id,sort: gen economy_eventcount=_N
+by region_id: keep if _n==1
+sort region_id region economy_eventcount
+keep region_id region economy_eventcount
+save economy_eventcount,replace
+
+/*为面板数据设定事件窗*/
+use marketdata,clear
+sort region_id
+merge m:1 region_id using isolation_eventcount
+keep if _merge==3
+drop _merge
+expand isolation_eventcount
+drop isolation_eventcount
+by region_id date,sort:gen regionevent_id=_n
+sort region_id regionevent_id date
+merge m:1 region_id regionevent_id using eventdata_isolation
+order area_id region_id area region date eventdate eventdate_id regionevent_id type1 type2 dweight
+keep if _merge==3
+drop _merge
+sort region_id regionevent_id date
+by region_id regionevent_id:gen datenum=_n
+by region_id regionevent_id:gen target=datenum if date>=eventdate
+egen td=min(target),by(region_id regionevent_id)
+drop target
+gen dif=datenum-td
+drop datenum td
+by region_id regionevent_id:gen windows=1 if dif>=-10 & dif<=10
+by region_id regionevent_id:replace windows=0 if dif>=-60 & dif<-10
+by region_id regionevent_id:replace windows=2 if dif>10 & dif<=30
+drop if windows==.
+
+by region_id regionevent_id:egen stock_er_temp=mean(stockreturn) if windows==0
+by region_id regionevent_id:egen stock_er=mean(stock_er_temp)
+by region_id regionevent_id:gen stock_ar=stockreturn-stock_er
+by region_id regionevent_id:gen stock_car=sum(stock_ar) if windows==1
+drop stock_er_temp
+by region_id regionevent_id:egen bond_er_temp=mean(bondreturn) if windows==0
+by region_id regionevent_id:egen bond_er=mean(bond_er_temp)
+by region_id regionevent_id:gen bond_ar=bondreturn-bond_er
+by region_id regionevent_id:gen bond_car=sum(bond_ar) if windows==1
+drop bond_er_temp
+
+order area_id region_id area region type1 type2 eventdate_id regionevent_id dweight tweight ndate date eventdate dif windows period period_id flag stock_er stock_ar stock_car bond_er bond_ar bond_car
+save paneldata_isolation,replace
+
+
+use marketdata,clear
+sort region_id
+merge m:1 region_id using economy_eventcount
+keep if _merge==3
+drop _merge
+expand economy_eventcount
+drop economy_eventcount
+by region_id date,sort:gen regionevent_id=_n
+sort region_id regionevent_id date
+merge m:1 region_id regionevent_id using eventdata_economy
+order area_id region_id area region date eventdate eventdate_id regionevent_id type1 type2 dweight
+keep if _merge==3
+drop _merge
+sort region_id regionevent_id date
+by region_id regionevent_id:gen datenum=_n
+by region_id regionevent_id:gen target=datenum if date>=eventdate
+egen td=min(target),by(region_id regionevent_id)
+drop target
+gen dif=datenum-td
+drop datenum td
+by region_id regionevent_id:gen windows=1 if dif>=-10 & dif<=10
+by region_id regionevent_id:replace windows=0 if dif>=-60 & dif<-10
+by region_id regionevent_id:replace windows=2 if dif>10 & dif<=30
+drop if windows==.
+
+by region_id regionevent_id:egen stock_er_temp=mean(stockreturn) if windows==0
+by region_id regionevent_id:egen stock_er=mean(stock_er_temp)
+by region_id regionevent_id:gen stock_ar=stockreturn-stock_er
+by region_id regionevent_id:gen stock_car=sum(stock_ar) if windows==1
+drop stock_er_temp
+by region_id regionevent_id:egen bond_er_temp=mean(bondreturn) if windows==0
+by region_id regionevent_id:egen bond_er=mean(bond_er_temp)
+by region_id regionevent_id:gen bond_ar=bondreturn-bond_er
+by region_id regionevent_id:gen bond_car=sum(bond_ar) if windows==1
+drop bond_er_temp
+
+order area_id region_id area region type1 type2 eventdate_id regionevent_id dweight tweight ndate date eventdate dif windows period period_id flag stock_er stock_ar stock_car bond_er bond_ar bond_car
+save paneldata_economy,replace
+
+/*AR、CAR作图：数据准备*/
+use paneldata_isolation,clear
+keep if windows==1
+drop tweight
+sort region_id dif regionevent_id
+by region_id dif:egen tweight=sum(dweight)
+by region_id dif:egen stock_ar_tsum=sum(dweight*stock_ar)
+by region_id dif:gen stock_ar_avg=stock_ar_tsum/tweight
+by region_id dif:egen stock_car_tsum=sum(dweight*stock_car)
+by region_id dif:gen stock_car_avg=stock_car_tsum/tweight
+by region_id dif:egen bond_ar_tsum=sum(dweight*bond_ar)
+by region_id dif:gen bond_ar_avg=bond_ar_tsum/tweight
+by region_id dif:egen bond_car_tsum=sum(dweight*bond_car)
+by region_id dif:gen bond_car_avg=bond_car_tsum/tweight
+drop stock_ar_tsum bond_car_tsum
+duplicates drop region_id dif,force
+sort region_id dif
+save arcargraph_isolation,replace
+
+use paneldata_economy,clear
+keep if windows==1
+drop tweight
+sort region_id dif regionevent_id
+by region_id dif:egen tweight=sum(dweight)
+by region_id dif:egen stock_ar_tsum=sum(dweight*stock_ar)
+by region_id dif:gen stock_ar_avg=stock_ar_tsum/tweight
+by region_id dif:egen stock_car_tsum=sum(dweight*stock_car)
+by region_id dif:gen stock_car_avg=stock_car_tsum/tweight
+by region_id dif:egen bond_ar_tsum=sum(dweight*bond_ar)
+by region_id dif:gen bond_ar_avg=bond_ar_tsum/tweight
+by region_id dif:egen bond_car_tsum=sum(dweight*bond_car)
+by region_id dif:gen bond_car_avg=bond_car_tsum/tweight
+drop stock_ar_tsum bond_car_tsum
+duplicates drop region_id dif,force
+sort region_id dif
+save arcargraph_economy,replace
+
+/*AR、CAR作图*/
+//绘图：隔离数据集-股票市场AR
+use arcargraph_isolation,clear
+line stock_ar_avg dif,by(area region) xline(0) xtitle("股票市场异常收益") ytitle("Stock_AR_avg") saving(isolation_stock_ar_global,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：隔离政策") 
+graph use isolation_stock_ar_global
+graph export isolation_stock_ar_global.png, as(png) replace
+
+//绘图：隔离数据集-股票市场CAR
+use arcargraph_isolation,clear
+line stock_car_avg dif,by(area region) xline(0) xtitle("股票市场累计异常收益") ytitle("Stock_CAR_avg") saving(isolation_stock_car_global,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：隔离政策") 
+graph use isolation_stock_car_global
+graph export isolation_stock_car_global.png, as(png) replace
+
+//绘图：隔离数据集-债券市场AR
+//阿根廷清零
+use arcargraph_isolation,clear
+replace bond_ar_avg=0 if region=="阿根廷"
+line bond_ar_avg dif,by(area region) xline(0) xtitle("债券市场异常收益") ytitle("Bond_AR_avg") saving(isolation_bond_ar_global,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：隔离政策") 
+graph use isolation_bond_ar_global
+graph export isolation_bond_ar_global.png, as(png) replace
+//阿根廷重绘并PS进去
+use arcargraph_isolation,clear
+keep if region=="阿根廷"
+line bond_ar_avg dif,by(area region) xline(0) xtitle("阿根廷债券市场异常收益") ytitle("Bond_AR_avg") saving(isolation_bond_ar_argentina,replace)
+
+//绘图：隔离数据集-债券市场CAR
+//阿根廷清零
+use arcargraph_isolation,clear
+replace bond_car_avg=0 if region=="阿根廷"
+line bond_car_avg dif,by(area region) xline(0) xtitle("债券市场累计异常收益") ytitle("Bond_CAR_avg") saving(isolation_bond_car_global,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：隔离政策") 
+graph use isolation_bond_car_global
+graph export isolation_bond_car_global.png, as(png) replace
+//阿根廷重绘并PS进去
+use arcargraph_isolation,clear
+keep if region=="阿根廷"
+line bond_car_avg dif,by(area region) xline(0) xtitle("阿根廷债券市场累计异常收益") ytitle("Bond_CAR_avg") saving(isolation_bond_car_argentina,replace)
+
+
+
+
+//绘图：经济数据集-股票市场AR
+use arcargraph_economy,clear
+line stock_ar_avg dif,by(area region) xline(0) xtitle("股票市场异常收益") ytitle("Stock_AR_avg") saving(economy_stock_ar_global,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：经济政策") 
+graph use economy_stock_ar_global
+graph export economy_stock_ar_global.png, as(png) replace
+
+//绘图：经济数据集-股票市场CAR
+use arcargraph_economy,clear
+line stock_car_avg dif,by(area region) xline(0) xtitle("股票市场累计异常收益") ytitle("Stock_CAR_avg") saving(economy_stock_car_global,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：经济政策") 
+graph use economy_stock_car_global
+graph export economy_stock_car_global.png, as(png) replace
+
+//绘图：经济数据集-债券市场AR
+//阿根廷清零
+use arcargraph_economy,clear
+replace bond_ar_avg=0 if region=="阿根廷"
+line bond_ar_avg dif,by(area region) xline(0) xtitle("债券市场异常收益") ytitle("Bond_AR_avg") saving(economy_bond_ar_global,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：经济政策") 
+graph use economy_bond_ar_global
+graph export economy_bond_ar_global.png, as(png) replace
+//阿根廷重绘并PS进去
+use arcargraph_economy,clear
+keep if region=="阿根廷"
+line bond_ar_avg dif,by(area region) xline(0) xtitle("阿根廷债券市场异常收益") ytitle("Bond_AR_avg") saving(economy_bond_ar_argentina,replace)
+
+//绘图：经济数据集-债券市场CAR
+//阿根廷清零
+use arcargraph_economy,clear
+replace bond_car_avg=0 if region=="阿根廷"
+line bond_car_avg dif,by(area region) xline(0) xtitle("债券市场累计异常收益") ytitle("Bond_CAR_avg") saving(economy_bond_car_global,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：经济政策") 
+graph use economy_bond_car_global
+graph export economy_bond_car_global.png, as(png) replace
+//阿根廷重绘并PS进去
+use arcargraph_economy,clear
+keep if region=="阿根廷"
+line bond_car_avg dif,by(area region) xline(0) xtitle("阿根廷债券市场累计异常收益") ytitle("Bond_CAR_avg") saving(economy_bond_car_argentina,replace)
+
+
+/*AR、CAR显著性检验：数据准备*/
+use paneldata_isolation,clear
+keep if windows==1
+drop tweight
+sort eventdate_id dif
+by eventdate_id:gen stock_ar_n1_temp=stock_ar if dif==-1
+by eventdate_id:egen stock_ar_n1=mean(stock_ar_n1_temp)
+by eventdate_id:gen stock_ar_0_temp=stock_ar if dif==0
+by eventdate_id:egen stock_ar_0=mean(stock_ar_0_temp)
+by eventdate_id:gen stock_ar_1_temp=stock_ar if dif==1
+by eventdate_id:egen stock_ar_1=mean(stock_ar_1_temp)
+by eventdate_id:gen stock_car_n5_temp=stock_car if dif==-5
+by eventdate_id:egen stock_car_n5=mean(stock_car_n5)
+by eventdate_id:gen stock_car_0_temp=stock_car if dif==0
+by eventdate_id:egen stock_car_0=mean(stock_car_0)
+by eventdate_id:gen stock_car_5_temp=stock_car if dif==5
+by eventdate_id:egen stock_car_5=mean(stock_car_5)
+by eventdate_id:gen stock_car_10_temp=stock_car if dif==10
+by eventdate_id:egen stock_car_10=mean(stock_car_10)
+by eventdate_id:gen stock_car_n10_n5=stock_car_n5
+by eventdate_id:gen stock_car_n5_0=stock_car_n5-stock_car_0
+by eventdate_id:gen stock_car_0_5=stock_car_5-stock_car_0
+by eventdate_id:gen stock_car_5_10=stock_car_10-stock_car_5
+by eventdate_id:gen stock_car_n10_10=stock_car_10
+by eventdate_id:gen bond_ar_n1_temp=bond_ar if dif==-1
+by eventdate_id:egen bond_ar_n1=mean(bond_ar_n1_temp)
+by eventdate_id:gen bond_ar_0_temp=bond_ar if dif==0
+by eventdate_id:egen bond_ar_0=mean(bond_ar_0_temp)
+by eventdate_id:gen bond_ar_1_temp=bond_ar if dif==1
+by eventdate_id:egen bond_ar_1=mean(bond_ar_1_temp)
+by eventdate_id:gen bond_car_n5_temp=bond_car if dif==-5
+by eventdate_id:egen bond_car_n5=mean(bond_car_n5)
+by eventdate_id:gen bond_car_0_temp=bond_car if dif==0
+by eventdate_id:egen bond_car_0=mean(bond_car_0)
+by eventdate_id:gen bond_car_5_temp=bond_car if dif==5
+by eventdate_id:egen bond_car_5=mean(bond_car_5)
+by eventdate_id:gen bond_car_10_temp=bond_car if dif==10
+by eventdate_id:egen bond_car_10=mean(bond_car_10)
+by eventdate_id:gen bond_car_n10_n5=bond_car_n5
+by eventdate_id:gen bond_car_n5_0=bond_car_n5-bond_car_0
+by eventdate_id:gen bond_car_0_5=bond_car_5-bond_car_0
+by eventdate_id:gen bond_car_5_10=bond_car_10-bond_car_5
+by eventdate_id:gen bond_car_n10_10=bond_car_10
+drop *_temp
+duplicates drop eventdate_id,force
+save ttestdata_isolation,replace
+
+use paneldata_economy,clear
+keep if windows==1
+drop tweight
+sort eventdate_id dif
+by eventdate_id:gen stock_ar_n1_temp=stock_ar if dif==-1
+by eventdate_id:egen stock_ar_n1=mean(stock_ar_n1_temp)
+by eventdate_id:gen stock_ar_0_temp=stock_ar if dif==0
+by eventdate_id:egen stock_ar_0=mean(stock_ar_0_temp)
+by eventdate_id:gen stock_ar_1_temp=stock_ar if dif==1
+by eventdate_id:egen stock_ar_1=mean(stock_ar_1_temp)
+by eventdate_id:gen stock_car_n5_temp=stock_car if dif==-5
+by eventdate_id:egen stock_car_n5=mean(stock_car_n5)
+by eventdate_id:gen stock_car_0_temp=stock_car if dif==0
+by eventdate_id:egen stock_car_0=mean(stock_car_0)
+by eventdate_id:gen stock_car_5_temp=stock_car if dif==5
+by eventdate_id:egen stock_car_5=mean(stock_car_5)
+by eventdate_id:gen stock_car_10_temp=stock_car if dif==10
+by eventdate_id:egen stock_car_10=mean(stock_car_10)
+by eventdate_id:gen stock_car_n10_n5=stock_car_n5
+by eventdate_id:gen stock_car_n5_0=stock_car_n5-stock_car_0
+by eventdate_id:gen stock_car_0_5=stock_car_5-stock_car_0
+by eventdate_id:gen stock_car_5_10=stock_car_10-stock_car_5
+by eventdate_id:gen stock_car_n10_10=stock_car_10
+by eventdate_id:gen bond_ar_n1_temp=bond_ar if dif==-1
+by eventdate_id:egen bond_ar_n1=mean(bond_ar_n1_temp)
+by eventdate_id:gen bond_ar_0_temp=bond_ar if dif==0
+by eventdate_id:egen bond_ar_0=mean(bond_ar_0_temp)
+by eventdate_id:gen bond_ar_1_temp=bond_ar if dif==1
+by eventdate_id:egen bond_ar_1=mean(bond_ar_1_temp)
+by eventdate_id:gen bond_car_n5_temp=bond_car if dif==-5
+by eventdate_id:egen bond_car_n5=mean(bond_car_n5)
+by eventdate_id:gen bond_car_0_temp=bond_car if dif==0
+by eventdate_id:egen bond_car_0=mean(bond_car_0)
+by eventdate_id:gen bond_car_5_temp=bond_car if dif==5
+by eventdate_id:egen bond_car_5=mean(bond_car_5)
+by eventdate_id:gen bond_car_10_temp=bond_car if dif==10
+by eventdate_id:egen bond_car_10=mean(bond_car_10)
+by eventdate_id:gen bond_car_n10_n5=bond_car_n5
+by eventdate_id:gen bond_car_n5_0=bond_car_n5-bond_car_0
+by eventdate_id:gen bond_car_0_5=bond_car_5-bond_car_0
+by eventdate_id:gen bond_car_5_10=bond_car_10-bond_car_5
+by eventdate_id:gen bond_car_n10_10=bond_car_10
+drop *_temp
+duplicates drop eventdate_id,force
+save ttestdata_economy,replace
+
+
+//**       基于隔离数据集       **//
+/*AR、CAR显著性检验：基于国家分组*/
+use ttestdata_isolation,clear
+sort region_id regionevent_id
+by region_id:egen tweight=sum(dweight)
+by region_id:egen stock_ar_n1_mean_temp=sum(dweight*stock_ar_n1)
+by region_id:gen stock_ar_n1_mean=stock_ar_n1_mean_temp/tweight
+by region_id:egen stock_ar_0_mean_temp=sum(dweight*stock_ar_0)
+by region_id:gen stock_ar_0_mean=stock_ar_0_mean_temp/tweight
+by region_id:egen stock_ar_1_mean_temp=sum(dweight*stock_ar_1)
+by region_id:gen stock_ar_1_mean=stock_ar_1_mean_temp/tweight
+by region_id:egen stock_car_n10_n5_mean_temp=sum(dweight*stock_car_n10_n5)
+by region_id:gen stock_car_n10_n5_mean=stock_car_n10_n5_mean_temp/tweight
+by region_id:egen stock_car_n5_0_mean_temp=sum(dweight*stock_car_n5_0)
+by region_id:gen stock_car_n5_0_mean=stock_car_n5_0_mean_temp/tweight
+by region_id:egen stock_car_0_5_mean_temp=sum(dweight*stock_car_0_5)
+by region_id:gen stock_car_0_5_mean=stock_car_0_5_mean_temp/tweight
+by region_id:egen stock_car_5_10_mean_temp=sum(dweight*stock_car_5_10)
+by region_id:gen stock_car_5_10_mean=stock_car_5_10_mean_temp/tweight
+by region_id:egen stock_car_n10_10_mean_temp=sum(dweight*stock_car_n10_10)
+by region_id:gen stock_car_n10_10_mean=stock_car_n10_10_mean_temp/tweight
+by region_id:egen bond_ar_n1_mean_temp=sum(dweight*bond_ar_n1)
+by region_id:gen bond_ar_n1_mean=bond_ar_n1_mean_temp/tweight
+by region_id:egen bond_ar_0_mean_temp=sum(dweight*bond_ar_0)
+by region_id:gen bond_ar_0_mean=bond_ar_0_mean_temp/tweight
+by region_id:egen bond_ar_1_mean_temp=sum(dweight*bond_ar_1)
+by region_id:gen bond_ar_1_mean=bond_ar_1_mean_temp/tweight
+by region_id:egen bond_car_n10_n5_mean_temp=sum(dweight*bond_car_n10_n5)
+by region_id:gen bond_car_n10_n5_mean=bond_car_n10_n5_mean_temp/tweight
+by region_id:egen bond_car_n5_0_mean_temp=sum(dweight*bond_car_n5_0)
+by region_id:gen bond_car_n5_0_mean=bond_car_n5_0_mean_temp/tweight
+by region_id:egen bond_car_0_5_mean_temp=sum(dweight*bond_car_0_5)
+by region_id:gen bond_car_0_5_mean=bond_car_0_5_mean_temp/tweight
+by region_id:egen bond_car_5_10_mean_temp=sum(dweight*bond_car_5_10)
+by region_id:gen bond_car_5_10_mean=bond_car_5_10_mean_temp/tweight
+by region_id:egen bond_car_n10_10_mean_temp=sum(dweight*bond_car_n10_10)
+by region_id:gen bond_car_n10_10_mean=bond_car_n10_10_mean_temp/tweight
+drop *_temp
+save ttestdata_isolation_byregion,replace
+
+use ttestdata_isolation_byregion,clear
+sort region_id regionevent_id
+egen idmax=max(region_id)
+global idmax=idmax
+matrix stock_ar_n1_pvalue=J($idmax,1,.)
+matrix stock_ar_0_pvalue=J($idmax,1,.)
+matrix stock_ar_1_pvalue=J($idmax,1,.)
+matrix stock_car_n10_n5_pvalue=J($idmax,1,.)
+matrix stock_car_n5_0_pvalue=J($idmax,1,.)
+matrix stock_car_0_5_pvalue=J($idmax,1,.)
+matrix stock_car_5_10_pvalue=J($idmax,1,.)
+matrix stock_car_n10_10_pvalue=J($idmax,1,.)
+matrix bond_ar_n1_pvalue=J($idmax,1,.)
+matrix bond_ar_0_pvalue=J($idmax,1,.)
+matrix bond_ar_1_pvalue=J($idmax,1,.)
+matrix bond_car_n10_n5_pvalue=J($idmax,1,.)
+matrix bond_car_n5_0_pvalue=J($idmax,1,.)
+matrix bond_car_0_5_pvalue=J($idmax,1,.)
+matrix bond_car_5_10_pvalue=J($idmax,1,.)
+matrix bond_car_n10_10_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+ttest stock_ar_n1==0 if region_id==`i'
+matrix stock_ar_n1_pvalue[`i',1]=r(p)
+ttest stock_ar_0==0 if region_id==`i'
+matrix stock_ar_0_pvalue[`i',1]=r(p)
+ttest stock_ar_1==0 if region_id==`i'
+matrix stock_ar_1_pvalue[`i',1]=r(p)
+ttest stock_car_n10_n5==0 if region_id==`i'
+matrix stock_car_n10_n5_pvalue[`i',1]=r(p)
+ttest stock_car_n5_0==0 if region_id==`i'
+matrix stock_car_n5_0_pvalue[`i',1]=r(p)
+ttest stock_car_0_5==0 if region_id==`i'
+matrix stock_car_0_5_pvalue[`i',1]=r(p)
+ttest stock_car_5_10==0 if region_id==`i'
+matrix stock_car_5_10_pvalue[`i',1]=r(p)
+ttest stock_car_n10_10==0 if region_id==`i'
+matrix stock_car_n10_10_pvalue[`i',1]=r(p)
+ttest bond_ar_n1==0 if region_id==`i'
+matrix bond_ar_n1_pvalue[`i',1]=r(p)
+ttest bond_ar_0==0 if region_id==`i'
+matrix bond_ar_0_pvalue[`i',1]=r(p)
+ttest bond_ar_1==0 if region_id==`i'
+matrix bond_ar_1_pvalue[`i',1]=r(p)
+ttest bond_car_n10_n5==0 if region_id==`i'
+matrix bond_car_n10_n5_pvalue[`i',1]=r(p)
+ttest bond_car_n5_0==0 if region_id==`i'
+matrix bond_car_n5_0_pvalue[`i',1]=r(p)
+ttest bond_car_0_5==0 if region_id==`i'
+matrix bond_car_0_5_pvalue[`i',1]=r(p)
+ttest bond_car_5_10==0 if region_id==`i'
+matrix bond_car_5_10_pvalue[`i',1]=r(p)
+ttest bond_car_n10_10==0 if region_id==`i'
+matrix bond_car_n10_10_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_ar_n1_pvalue,name(stock_ar_n1_pvalue)
+svmat double stock_ar_0_pvalue,name(stock_ar_0_pvalue)
+svmat double stock_ar_1_pvalue,name(stock_ar_1_pvalue)
+svmat double stock_car_n10_n5_pvalue,name(stock_car_n10_n5_pvalue)
+svmat double stock_car_n5_0_pvalue,name(stock_car_n5_0_pvalue)
+svmat double stock_car_0_5_pvalue,name(stock_car_0_5_pvalue)
+svmat double stock_car_5_10_pvalue,name(stock_car_5_10_pvalue)
+svmat double stock_car_n10_10_pvalue,name(stock_car_n10_10_pvalue)
+svmat double bond_ar_n1_pvalue,name(bond_ar_n1_pvalue)
+svmat double bond_ar_0_pvalue,name(bond_ar_0_pvalue)
+svmat double bond_ar_1_pvalue,name(bond_ar_1_pvalue)
+svmat double bond_car_n10_n5_pvalue,name(bond_car_n10_n5_pvalue)
+svmat double bond_car_n5_0_pvalue,name(bond_car_n5_0_pvalue)
+svmat double bond_car_0_5_pvalue,name(bond_car_0_5_pvalue)
+svmat double bond_car_5_10_pvalue,name(bond_car_5_10_pvalue)
+svmat double bond_car_n10_10_pvalue,name(bond_car_n10_10_pvalue)
+rename stock_ar_n1_pvalue1 stock_ar_n1_pvalue
+rename stock_ar_0_pvalue1 stock_ar_0_pvalue
+rename stock_ar_1_pvalue1 stock_ar_1_pvalue
+rename stock_car_n10_n5_pvalue1 stock_car_n10_n5_pvalue
+rename stock_car_n5_0_pvalue1 stock_car_n5_0_pvalue
+rename stock_car_0_5_pvalue1 stock_car_0_5_pvalue
+rename stock_car_5_10_pvalue1 stock_car_5_10_pvalue
+rename stock_car_n10_10_pvalue1 stock_car_n10_10_pvalue
+rename bond_ar_n1_pvalue1 bond_ar_n1_pvalue
+rename bond_ar_0_pvalue1 bond_ar_0_pvalue
+rename bond_ar_1_pvalue1 bond_ar_1_pvalue
+rename bond_car_n10_n5_pvalue1 bond_car_n10_n5_pvalue
+rename bond_car_n5_0_pvalue1 bond_car_n5_0_pvalue
+rename bond_car_0_5_pvalue1 bond_car_0_5_pvalue
+rename bond_car_5_10_pvalue1 bond_car_5_10_pvalue
+rename bond_car_n10_10_pvalue1 bond_car_n10_10_pvalue
+gen region_id=_n
+order region_id
+sort region_id
+save ttestpvalue_isolation_byregion,replace
+
+use ttestdata_isolation_byregion,clear
+duplicates drop region_id,force
+keep region_id stock_ar_n1_mean stock_ar_0_mean stock_ar_1_mean stock_car_n10_n5_mean stock_car_n5_0_mean stock_car_0_5_mean stock_car_5_10_mean stock_car_n10_10_mean bond_ar_n1_mean bond_ar_0_mean bond_ar_1_mean bond_car_n10_n5_mean bond_car_n5_0_mean bond_car_0_5_mean bond_car_5_10_mean bond_car_n10_10_mean
+save ttestmean_isolation_byregion,replace
+merge 1:1 region_id using ttestpvalue_isolation_byregion
+drop _merge
+order region_id stock* bond*
+save ttestresult_isolation_byregion,replace
+
+use ttestresult_isolation_byregion,clear
+rename region_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save ttestresult_isolation_byregion_combined1,replace
+use ttestresult_isolation_byregion,clear
+rename region_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save ttestresult_isolation_byregion_combined2,replace
+use ttestresult_isolation_byregion_combined1,clear
+append using ttestresult_isolation_byregion_combined2
+sort vandp
+save ttestresult_isolation_byregion_combined,replace
+export excel using ttestresult_isolation_byregion_combined.xls,replace firstrow(variables)
+
+/*AR、CAR显著性检验：基于区域分组*/
+use ttestdata_isolation,clear
+sort area_id eventdate_id
+by area_id:egen tweight=sum(dweight)
+by area_id:egen stock_ar_n1_mean_temp=sum(dweight*stock_ar_n1)
+by area_id:gen stock_ar_n1_mean=stock_ar_n1_mean_temp/tweight
+by area_id:egen stock_ar_0_mean_temp=sum(dweight*stock_ar_0)
+by area_id:gen stock_ar_0_mean=stock_ar_0_mean_temp/tweight
+by area_id:egen stock_ar_1_mean_temp=sum(dweight*stock_ar_1)
+by area_id:gen stock_ar_1_mean=stock_ar_1_mean_temp/tweight
+by area_id:egen stock_car_n10_n5_mean_temp=sum(dweight*stock_car_n10_n5)
+by area_id:gen stock_car_n10_n5_mean=stock_car_n10_n5_mean_temp/tweight
+by area_id:egen stock_car_n5_0_mean_temp=sum(dweight*stock_car_n5_0)
+by area_id:gen stock_car_n5_0_mean=stock_car_n5_0_mean_temp/tweight
+by area_id:egen stock_car_0_5_mean_temp=sum(dweight*stock_car_0_5)
+by area_id:gen stock_car_0_5_mean=stock_car_0_5_mean_temp/tweight
+by area_id:egen stock_car_5_10_mean_temp=sum(dweight*stock_car_5_10)
+by area_id:gen stock_car_5_10_mean=stock_car_5_10_mean_temp/tweight
+by area_id:egen stock_car_n10_10_mean_temp=sum(dweight*stock_car_n10_10)
+by area_id:gen stock_car_n10_10_mean=stock_car_n10_10_mean_temp/tweight
+by area_id:egen bond_ar_n1_mean_temp=sum(dweight*bond_ar_n1)
+by area_id:gen bond_ar_n1_mean=bond_ar_n1_mean_temp/tweight
+by area_id:egen bond_ar_0_mean_temp=sum(dweight*bond_ar_0)
+by area_id:gen bond_ar_0_mean=bond_ar_0_mean_temp/tweight
+by area_id:egen bond_ar_1_mean_temp=sum(dweight*bond_ar_1)
+by area_id:gen bond_ar_1_mean=bond_ar_1_mean_temp/tweight
+by area_id:egen bond_car_n10_n5_mean_temp=sum(dweight*bond_car_n10_n5)
+by area_id:gen bond_car_n10_n5_mean=bond_car_n10_n5_mean_temp/tweight
+by area_id:egen bond_car_n5_0_mean_temp=sum(dweight*bond_car_n5_0)
+by area_id:gen bond_car_n5_0_mean=bond_car_n5_0_mean_temp/tweight
+by area_id:egen bond_car_0_5_mean_temp=sum(dweight*bond_car_0_5)
+by area_id:gen bond_car_0_5_mean=bond_car_0_5_mean_temp/tweight
+by area_id:egen bond_car_5_10_mean_temp=sum(dweight*bond_car_5_10)
+by area_id:gen bond_car_5_10_mean=bond_car_5_10_mean_temp/tweight
+by area_id:egen bond_car_n10_10_mean_temp=sum(dweight*bond_car_n10_10)
+by area_id:gen bond_car_n10_10_mean=bond_car_n10_10_mean_temp/tweight
+drop *_temp
+save ttestdata_isolation_byarea,replace
+
+use ttestdata_isolation_byarea,clear
+sort area_id eventdate_id
+egen idmax=max(area_id)
+global idmax=idmax
+matrix stock_ar_n1_pvalue=J($idmax,1,.)
+matrix stock_ar_0_pvalue=J($idmax,1,.)
+matrix stock_ar_1_pvalue=J($idmax,1,.)
+matrix stock_car_n10_n5_pvalue=J($idmax,1,.)
+matrix stock_car_n5_0_pvalue=J($idmax,1,.)
+matrix stock_car_0_5_pvalue=J($idmax,1,.)
+matrix stock_car_5_10_pvalue=J($idmax,1,.)
+matrix stock_car_n10_10_pvalue=J($idmax,1,.)
+matrix bond_ar_n1_pvalue=J($idmax,1,.)
+matrix bond_ar_0_pvalue=J($idmax,1,.)
+matrix bond_ar_1_pvalue=J($idmax,1,.)
+matrix bond_car_n10_n5_pvalue=J($idmax,1,.)
+matrix bond_car_n5_0_pvalue=J($idmax,1,.)
+matrix bond_car_0_5_pvalue=J($idmax,1,.)
+matrix bond_car_5_10_pvalue=J($idmax,1,.)
+matrix bond_car_n10_10_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+ttest stock_ar_n1==0 if area_id==`i'
+matrix stock_ar_n1_pvalue[`i',1]=r(p)
+ttest stock_ar_0==0 if area_id==`i'
+matrix stock_ar_0_pvalue[`i',1]=r(p)
+ttest stock_ar_1==0 if area_id==`i'
+matrix stock_ar_1_pvalue[`i',1]=r(p)
+ttest stock_car_n10_n5==0 if area_id==`i'
+matrix stock_car_n10_n5_pvalue[`i',1]=r(p)
+ttest stock_car_n5_0==0 if area_id==`i'
+matrix stock_car_n5_0_pvalue[`i',1]=r(p)
+ttest stock_car_0_5==0 if area_id==`i'
+matrix stock_car_0_5_pvalue[`i',1]=r(p)
+ttest stock_car_5_10==0 if area_id==`i'
+matrix stock_car_5_10_pvalue[`i',1]=r(p)
+ttest stock_car_n10_10==0 if area_id==`i'
+matrix stock_car_n10_10_pvalue[`i',1]=r(p)
+ttest bond_ar_n1==0 if area_id==`i'
+matrix bond_ar_n1_pvalue[`i',1]=r(p)
+ttest bond_ar_0==0 if area_id==`i'
+matrix bond_ar_0_pvalue[`i',1]=r(p)
+ttest bond_ar_1==0 if area_id==`i'
+matrix bond_ar_1_pvalue[`i',1]=r(p)
+ttest bond_car_n10_n5==0 if area_id==`i'
+matrix bond_car_n10_n5_pvalue[`i',1]=r(p)
+ttest bond_car_n5_0==0 if area_id==`i'
+matrix bond_car_n5_0_pvalue[`i',1]=r(p)
+ttest bond_car_0_5==0 if area_id==`i'
+matrix bond_car_0_5_pvalue[`i',1]=r(p)
+ttest bond_car_5_10==0 if area_id==`i'
+matrix bond_car_5_10_pvalue[`i',1]=r(p)
+ttest bond_car_n10_10==0 if area_id==`i'
+matrix bond_car_n10_10_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_ar_n1_pvalue,name(stock_ar_n1_pvalue)
+svmat double stock_ar_0_pvalue,name(stock_ar_0_pvalue)
+svmat double stock_ar_1_pvalue,name(stock_ar_1_pvalue)
+svmat double stock_car_n10_n5_pvalue,name(stock_car_n10_n5_pvalue)
+svmat double stock_car_n5_0_pvalue,name(stock_car_n5_0_pvalue)
+svmat double stock_car_0_5_pvalue,name(stock_car_0_5_pvalue)
+svmat double stock_car_5_10_pvalue,name(stock_car_5_10_pvalue)
+svmat double stock_car_n10_10_pvalue,name(stock_car_n10_10_pvalue)
+svmat double bond_ar_n1_pvalue,name(bond_ar_n1_pvalue)
+svmat double bond_ar_0_pvalue,name(bond_ar_0_pvalue)
+svmat double bond_ar_1_pvalue,name(bond_ar_1_pvalue)
+svmat double bond_car_n10_n5_pvalue,name(bond_car_n10_n5_pvalue)
+svmat double bond_car_n5_0_pvalue,name(bond_car_n5_0_pvalue)
+svmat double bond_car_0_5_pvalue,name(bond_car_0_5_pvalue)
+svmat double bond_car_5_10_pvalue,name(bond_car_5_10_pvalue)
+svmat double bond_car_n10_10_pvalue,name(bond_car_n10_10_pvalue)
+rename stock_ar_n1_pvalue1 stock_ar_n1_pvalue
+rename stock_ar_0_pvalue1 stock_ar_0_pvalue
+rename stock_ar_1_pvalue1 stock_ar_1_pvalue
+rename stock_car_n10_n5_pvalue1 stock_car_n10_n5_pvalue
+rename stock_car_n5_0_pvalue1 stock_car_n5_0_pvalue
+rename stock_car_0_5_pvalue1 stock_car_0_5_pvalue
+rename stock_car_5_10_pvalue1 stock_car_5_10_pvalue
+rename stock_car_n10_10_pvalue1 stock_car_n10_10_pvalue
+rename bond_ar_n1_pvalue1 bond_ar_n1_pvalue
+rename bond_ar_0_pvalue1 bond_ar_0_pvalue
+rename bond_ar_1_pvalue1 bond_ar_1_pvalue
+rename bond_car_n10_n5_pvalue1 bond_car_n10_n5_pvalue
+rename bond_car_n5_0_pvalue1 bond_car_n5_0_pvalue
+rename bond_car_0_5_pvalue1 bond_car_0_5_pvalue
+rename bond_car_5_10_pvalue1 bond_car_5_10_pvalue
+rename bond_car_n10_10_pvalue1 bond_car_n10_10_pvalue
+gen area_id=_n
+order area_id
+sort area_id
+save ttestpvalue_isolation_byarea,replace
+
+use ttestdata_isolation_byarea,clear
+duplicates drop area_id,force
+keep area_id stock_ar_n1_mean stock_ar_0_mean stock_ar_1_mean stock_car_n10_n5_mean stock_car_n5_0_mean stock_car_0_5_mean stock_car_5_10_mean stock_car_n10_10_mean bond_ar_n1_mean bond_ar_0_mean bond_ar_1_mean bond_car_n10_n5_mean bond_car_n5_0_mean bond_car_0_5_mean bond_car_5_10_mean bond_car_n10_10_mean
+save ttestmean_isolation_byarea,replace
+merge 1:1 area_id using ttestpvalue_isolation_byarea
+drop _merge
+order area_id stock* bond*
+save ttestresult_isolation_byarea,replace
+
+use ttestresult_isolation_byarea,clear
+rename area_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save ttestresult_isolation_byarea_combined1,replace
+use ttestresult_isolation_byarea,clear
+rename area_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save ttestresult_isolation_byarea_combined2,replace
+use ttestresult_isolation_byarea_combined1,clear
+append using ttestresult_isolation_byarea_combined2
+sort vandp
+save ttestresult_isolation_byarea_combined,replace
+export excel using ttestresult_isolation_byarea_combined.xls,replace firstrow(variables)
+
+/*AR、CAR显著性检验：全球（或称基于Type1）*/
+use ttestdata_isolation,clear
+sort eventdate_id
+egen tweight=sum(dweight)
+egen stock_ar_n1_mean_temp=sum(dweight*stock_ar_n1)
+gen stock_ar_n1_mean=stock_ar_n1_mean_temp/tweight
+egen stock_ar_0_mean_temp=sum(dweight*stock_ar_0)
+gen stock_ar_0_mean=stock_ar_0_mean_temp/tweight
+egen stock_ar_1_mean_temp=sum(dweight*stock_ar_1)
+gen stock_ar_1_mean=stock_ar_1_mean_temp/tweight
+egen stock_car_n10_n5_mean_temp=sum(dweight*stock_car_n10_n5)
+gen stock_car_n10_n5_mean=stock_car_n10_n5_mean_temp/tweight
+egen stock_car_n5_0_mean_temp=sum(dweight*stock_car_n5_0)
+gen stock_car_n5_0_mean=stock_car_n5_0_mean_temp/tweight
+egen stock_car_0_5_mean_temp=sum(dweight*stock_car_0_5)
+gen stock_car_0_5_mean=stock_car_0_5_mean_temp/tweight
+egen stock_car_5_10_mean_temp=sum(dweight*stock_car_5_10)
+gen stock_car_5_10_mean=stock_car_5_10_mean_temp/tweight
+egen stock_car_n10_10_mean_temp=sum(dweight*stock_car_n10_10)
+gen stock_car_n10_10_mean=stock_car_n10_10_mean_temp/tweight
+egen bond_ar_n1_mean_temp=sum(dweight*bond_ar_n1)
+gen bond_ar_n1_mean=bond_ar_n1_mean_temp/tweight
+egen bond_ar_0_mean_temp=sum(dweight*bond_ar_0)
+gen bond_ar_0_mean=bond_ar_0_mean_temp/tweight
+egen bond_ar_1_mean_temp=sum(dweight*bond_ar_1)
+gen bond_ar_1_mean=bond_ar_1_mean_temp/tweight
+egen bond_car_n10_n5_mean_temp=sum(dweight*bond_car_n10_n5)
+gen bond_car_n10_n5_mean=bond_car_n10_n5_mean_temp/tweight
+egen bond_car_n5_0_mean_temp=sum(dweight*bond_car_n5_0)
+gen bond_car_n5_0_mean=bond_car_n5_0_mean_temp/tweight
+egen bond_car_0_5_mean_temp=sum(dweight*bond_car_0_5)
+gen bond_car_0_5_mean=bond_car_0_5_mean_temp/tweight
+egen bond_car_5_10_mean_temp=sum(dweight*bond_car_5_10)
+gen bond_car_5_10_mean=bond_car_5_10_mean_temp/tweight
+egen bond_car_n10_10_mean_temp=sum(dweight*bond_car_n10_10)
+gen bond_car_n10_10_mean=bond_car_n10_10_mean_temp/tweight
+drop *_temp
+save ttestdata_isolation_global,replace
+
+use ttestdata_isolation_global,clear
+sort eventdate_id
+gen idmax=1
+global idmax=idmax
+matrix stock_ar_n1_pvalue=J($idmax,1,.)
+matrix stock_ar_0_pvalue=J($idmax,1,.)
+matrix stock_ar_1_pvalue=J($idmax,1,.)
+matrix stock_car_n10_n5_pvalue=J($idmax,1,.)
+matrix stock_car_n5_0_pvalue=J($idmax,1,.)
+matrix stock_car_0_5_pvalue=J($idmax,1,.)
+matrix stock_car_5_10_pvalue=J($idmax,1,.)
+matrix stock_car_n10_10_pvalue=J($idmax,1,.)
+matrix bond_ar_n1_pvalue=J($idmax,1,.)
+matrix bond_ar_0_pvalue=J($idmax,1,.)
+matrix bond_ar_1_pvalue=J($idmax,1,.)
+matrix bond_car_n10_n5_pvalue=J($idmax,1,.)
+matrix bond_car_n5_0_pvalue=J($idmax,1,.)
+matrix bond_car_0_5_pvalue=J($idmax,1,.)
+matrix bond_car_5_10_pvalue=J($idmax,1,.)
+matrix bond_car_n10_10_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+ttest stock_ar_n1==0
+matrix stock_ar_n1_pvalue[`i',1]=r(p)
+ttest stock_ar_0==0
+matrix stock_ar_0_pvalue[`i',1]=r(p)
+ttest stock_ar_1==0
+matrix stock_ar_1_pvalue[`i',1]=r(p)
+ttest stock_car_n10_n5==0
+matrix stock_car_n10_n5_pvalue[`i',1]=r(p)
+ttest stock_car_n5_0==0
+matrix stock_car_n5_0_pvalue[`i',1]=r(p)
+ttest stock_car_0_5==0
+matrix stock_car_0_5_pvalue[`i',1]=r(p)
+ttest stock_car_5_10==0
+matrix stock_car_5_10_pvalue[`i',1]=r(p)
+ttest stock_car_n10_10==0
+matrix stock_car_n10_10_pvalue[`i',1]=r(p)
+ttest bond_ar_n1==0
+matrix bond_ar_n1_pvalue[`i',1]=r(p)
+ttest bond_ar_0==0
+matrix bond_ar_0_pvalue[`i',1]=r(p)
+ttest bond_ar_1==0
+matrix bond_ar_1_pvalue[`i',1]=r(p)
+ttest bond_car_n10_n5==0
+matrix bond_car_n10_n5_pvalue[`i',1]=r(p)
+ttest bond_car_n5_0==0
+matrix bond_car_n5_0_pvalue[`i',1]=r(p)
+ttest bond_car_0_5==0
+matrix bond_car_0_5_pvalue[`i',1]=r(p)
+ttest bond_car_5_10==0
+matrix bond_car_5_10_pvalue[`i',1]=r(p)
+ttest bond_car_n10_10==0
+matrix bond_car_n10_10_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_ar_n1_pvalue,name(stock_ar_n1_pvalue)
+svmat double stock_ar_0_pvalue,name(stock_ar_0_pvalue)
+svmat double stock_ar_1_pvalue,name(stock_ar_1_pvalue)
+svmat double stock_car_n10_n5_pvalue,name(stock_car_n10_n5_pvalue)
+svmat double stock_car_n5_0_pvalue,name(stock_car_n5_0_pvalue)
+svmat double stock_car_0_5_pvalue,name(stock_car_0_5_pvalue)
+svmat double stock_car_5_10_pvalue,name(stock_car_5_10_pvalue)
+svmat double stock_car_n10_10_pvalue,name(stock_car_n10_10_pvalue)
+svmat double bond_ar_n1_pvalue,name(bond_ar_n1_pvalue)
+svmat double bond_ar_0_pvalue,name(bond_ar_0_pvalue)
+svmat double bond_ar_1_pvalue,name(bond_ar_1_pvalue)
+svmat double bond_car_n10_n5_pvalue,name(bond_car_n10_n5_pvalue)
+svmat double bond_car_n5_0_pvalue,name(bond_car_n5_0_pvalue)
+svmat double bond_car_0_5_pvalue,name(bond_car_0_5_pvalue)
+svmat double bond_car_5_10_pvalue,name(bond_car_5_10_pvalue)
+svmat double bond_car_n10_10_pvalue,name(bond_car_n10_10_pvalue)
+rename stock_ar_n1_pvalue1 stock_ar_n1_pvalue
+rename stock_ar_0_pvalue1 stock_ar_0_pvalue
+rename stock_ar_1_pvalue1 stock_ar_1_pvalue
+rename stock_car_n10_n5_pvalue1 stock_car_n10_n5_pvalue
+rename stock_car_n5_0_pvalue1 stock_car_n5_0_pvalue
+rename stock_car_0_5_pvalue1 stock_car_0_5_pvalue
+rename stock_car_5_10_pvalue1 stock_car_5_10_pvalue
+rename stock_car_n10_10_pvalue1 stock_car_n10_10_pvalue
+rename bond_ar_n1_pvalue1 bond_ar_n1_pvalue
+rename bond_ar_0_pvalue1 bond_ar_0_pvalue
+rename bond_ar_1_pvalue1 bond_ar_1_pvalue
+rename bond_car_n10_n5_pvalue1 bond_car_n10_n5_pvalue
+rename bond_car_n5_0_pvalue1 bond_car_n5_0_pvalue
+rename bond_car_0_5_pvalue1 bond_car_0_5_pvalue
+rename bond_car_5_10_pvalue1 bond_car_5_10_pvalue
+rename bond_car_n10_10_pvalue1 bond_car_n10_10_pvalue
+gen area_id=6
+order area_id
+sort area_id
+save ttestpvalue_isolation_global,replace
+
+use ttestdata_isolation_global,clear
+keep in 1
+keep area_id stock_ar_n1_mean stock_ar_0_mean stock_ar_1_mean stock_car_n10_n5_mean stock_car_n5_0_mean stock_car_0_5_mean stock_car_5_10_mean stock_car_n10_10_mean bond_ar_n1_mean bond_ar_0_mean bond_ar_1_mean bond_car_n10_n5_mean bond_car_n5_0_mean bond_car_0_5_mean bond_car_5_10_mean bond_car_n10_10_mean
+replace area_id=6
+save ttestmean_isolation_global,replace
+merge 1:1 area_id using ttestpvalue_isolation_global
+drop _merge
+order area_id stock* bond*
+save ttestresult_isolation_global,replace
+
+use ttestresult_isolation_global,clear
+rename area_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save ttestresult_isolation_global_combined1,replace
+use ttestresult_isolation_global,clear
+rename area_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save ttestresult_isolation_global_combined2,replace
+use ttestresult_isolation_global_combined1,clear
+append using ttestresult_isolation_global_combined2
+sort vandp
+save ttestresult_isolation_global_combined,replace
+export excel using ttestresult_isolation_global_combined.xls,replace firstrow(variables)
+
+/*AR、CAR显著性检验：基于Type2分组*/
+use ttestdata_isolation,clear
+sort type1 type2
+merge m:1 type2 using eventtype_isolation
+drop _merge count
+sort type2_id eventdate_id
+
+by type2_id:egen tweight=sum(dweight)
+by type2_id:egen stock_ar_n1_mean_temp=sum(dweight*stock_ar_n1)
+by type2_id:gen stock_ar_n1_mean=stock_ar_n1_mean_temp/tweight
+by type2_id:egen stock_ar_0_mean_temp=sum(dweight*stock_ar_0)
+by type2_id:gen stock_ar_0_mean=stock_ar_0_mean_temp/tweight
+by type2_id:egen stock_ar_1_mean_temp=sum(dweight*stock_ar_1)
+by type2_id:gen stock_ar_1_mean=stock_ar_1_mean_temp/tweight
+by type2_id:egen stock_car_n10_n5_mean_temp=sum(dweight*stock_car_n10_n5)
+by type2_id:gen stock_car_n10_n5_mean=stock_car_n10_n5_mean_temp/tweight
+by type2_id:egen stock_car_n5_0_mean_temp=sum(dweight*stock_car_n5_0)
+by type2_id:gen stock_car_n5_0_mean=stock_car_n5_0_mean_temp/tweight
+by type2_id:egen stock_car_0_5_mean_temp=sum(dweight*stock_car_0_5)
+by type2_id:gen stock_car_0_5_mean=stock_car_0_5_mean_temp/tweight
+by type2_id:egen stock_car_5_10_mean_temp=sum(dweight*stock_car_5_10)
+by type2_id:gen stock_car_5_10_mean=stock_car_5_10_mean_temp/tweight
+by type2_id:egen stock_car_n10_10_mean_temp=sum(dweight*stock_car_n10_10)
+by type2_id:gen stock_car_n10_10_mean=stock_car_n10_10_mean_temp/tweight
+by type2_id:egen bond_ar_n1_mean_temp=sum(dweight*bond_ar_n1)
+by type2_id:gen bond_ar_n1_mean=bond_ar_n1_mean_temp/tweight
+by type2_id:egen bond_ar_0_mean_temp=sum(dweight*bond_ar_0)
+by type2_id:gen bond_ar_0_mean=bond_ar_0_mean_temp/tweight
+by type2_id:egen bond_ar_1_mean_temp=sum(dweight*bond_ar_1)
+by type2_id:gen bond_ar_1_mean=bond_ar_1_mean_temp/tweight
+by type2_id:egen bond_car_n10_n5_mean_temp=sum(dweight*bond_car_n10_n5)
+by type2_id:gen bond_car_n10_n5_mean=bond_car_n10_n5_mean_temp/tweight
+by type2_id:egen bond_car_n5_0_mean_temp=sum(dweight*bond_car_n5_0)
+by type2_id:gen bond_car_n5_0_mean=bond_car_n5_0_mean_temp/tweight
+by type2_id:egen bond_car_0_5_mean_temp=sum(dweight*bond_car_0_5)
+by type2_id:gen bond_car_0_5_mean=bond_car_0_5_mean_temp/tweight
+by type2_id:egen bond_car_5_10_mean_temp=sum(dweight*bond_car_5_10)
+by type2_id:gen bond_car_5_10_mean=bond_car_5_10_mean_temp/tweight
+by type2_id:egen bond_car_n10_10_mean_temp=sum(dweight*bond_car_n10_10)
+by type2_id:gen bond_car_n10_10_mean=bond_car_n10_10_mean_temp/tweight
+drop *_temp
+save ttestdata_isolation_bytype2,replace
+
+use ttestdata_isolation_bytype2,clear
+sort type2_id eventdate_id
+egen idmax=max(type2_id)
+global idmax=idmax
+matrix stock_ar_n1_pvalue=J($idmax,1,.)
+matrix stock_ar_0_pvalue=J($idmax,1,.)
+matrix stock_ar_1_pvalue=J($idmax,1,.)
+matrix stock_car_n10_n5_pvalue=J($idmax,1,.)
+matrix stock_car_n5_0_pvalue=J($idmax,1,.)
+matrix stock_car_0_5_pvalue=J($idmax,1,.)
+matrix stock_car_5_10_pvalue=J($idmax,1,.)
+matrix stock_car_n10_10_pvalue=J($idmax,1,.)
+matrix bond_ar_n1_pvalue=J($idmax,1,.)
+matrix bond_ar_0_pvalue=J($idmax,1,.)
+matrix bond_ar_1_pvalue=J($idmax,1,.)
+matrix bond_car_n10_n5_pvalue=J($idmax,1,.)
+matrix bond_car_n5_0_pvalue=J($idmax,1,.)
+matrix bond_car_0_5_pvalue=J($idmax,1,.)
+matrix bond_car_5_10_pvalue=J($idmax,1,.)
+matrix bond_car_n10_10_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+display "-------------------------------------------"
+display "id=",`i'
+capture noisily ttest stock_ar_n1==0 if type2_id==`i'
+matrix stock_ar_n1_pvalue[`i',1]=r(p)
+capture noisily ttest stock_ar_0==0 if type2_id==`i'
+matrix stock_ar_0_pvalue[`i',1]=r(p)
+capture noisily ttest stock_ar_1==0 if type2_id==`i'
+matrix stock_ar_1_pvalue[`i',1]=r(p)
+capture noisily ttest stock_car_n10_n5==0 if type2_id==`i'
+matrix stock_car_n10_n5_pvalue[`i',1]=r(p)
+capture noisily ttest stock_car_n5_0==0 if type2_id==`i'
+matrix stock_car_n5_0_pvalue[`i',1]=r(p)
+capture noisily ttest stock_car_0_5==0 if type2_id==`i'
+matrix stock_car_0_5_pvalue[`i',1]=r(p)
+capture noisily ttest stock_car_5_10==0 if type2_id==`i'
+matrix stock_car_5_10_pvalue[`i',1]=r(p)
+capture noisily ttest stock_car_n10_10==0 if type2_id==`i'
+matrix stock_car_n10_10_pvalue[`i',1]=r(p)
+capture noisily ttest bond_ar_n1==0 if type2_id==`i'
+matrix bond_ar_n1_pvalue[`i',1]=r(p)
+capture noisily ttest bond_ar_0==0 if type2_id==`i'
+matrix bond_ar_0_pvalue[`i',1]=r(p)
+capture noisily ttest bond_ar_1==0 if type2_id==`i'
+matrix bond_ar_1_pvalue[`i',1]=r(p)
+capture noisily ttest bond_car_n10_n5==0 if type2_id==`i'
+matrix bond_car_n10_n5_pvalue[`i',1]=r(p)
+capture noisily ttest bond_car_n5_0==0 if type2_id==`i'
+matrix bond_car_n5_0_pvalue[`i',1]=r(p)
+capture noisily ttest bond_car_0_5==0 if type2_id==`i'
+matrix bond_car_0_5_pvalue[`i',1]=r(p)
+capture noisily ttest bond_car_5_10==0 if type2_id==`i'
+matrix bond_car_5_10_pvalue[`i',1]=r(p)
+capture noisily ttest bond_car_n10_10==0 if type2_id==`i'
+matrix bond_car_n10_10_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_ar_n1_pvalue,name(stock_ar_n1_pvalue)
+svmat double stock_ar_0_pvalue,name(stock_ar_0_pvalue)
+svmat double stock_ar_1_pvalue,name(stock_ar_1_pvalue)
+svmat double stock_car_n10_n5_pvalue,name(stock_car_n10_n5_pvalue)
+svmat double stock_car_n5_0_pvalue,name(stock_car_n5_0_pvalue)
+svmat double stock_car_0_5_pvalue,name(stock_car_0_5_pvalue)
+svmat double stock_car_5_10_pvalue,name(stock_car_5_10_pvalue)
+svmat double stock_car_n10_10_pvalue,name(stock_car_n10_10_pvalue)
+svmat double bond_ar_n1_pvalue,name(bond_ar_n1_pvalue)
+svmat double bond_ar_0_pvalue,name(bond_ar_0_pvalue)
+svmat double bond_ar_1_pvalue,name(bond_ar_1_pvalue)
+svmat double bond_car_n10_n5_pvalue,name(bond_car_n10_n5_pvalue)
+svmat double bond_car_n5_0_pvalue,name(bond_car_n5_0_pvalue)
+svmat double bond_car_0_5_pvalue,name(bond_car_0_5_pvalue)
+svmat double bond_car_5_10_pvalue,name(bond_car_5_10_pvalue)
+svmat double bond_car_n10_10_pvalue,name(bond_car_n10_10_pvalue)
+rename stock_ar_n1_pvalue1 stock_ar_n1_pvalue
+rename stock_ar_0_pvalue1 stock_ar_0_pvalue
+rename stock_ar_1_pvalue1 stock_ar_1_pvalue
+rename stock_car_n10_n5_pvalue1 stock_car_n10_n5_pvalue
+rename stock_car_n5_0_pvalue1 stock_car_n5_0_pvalue
+rename stock_car_0_5_pvalue1 stock_car_0_5_pvalue
+rename stock_car_5_10_pvalue1 stock_car_5_10_pvalue
+rename stock_car_n10_10_pvalue1 stock_car_n10_10_pvalue
+rename bond_ar_n1_pvalue1 bond_ar_n1_pvalue
+rename bond_ar_0_pvalue1 bond_ar_0_pvalue
+rename bond_ar_1_pvalue1 bond_ar_1_pvalue
+rename bond_car_n10_n5_pvalue1 bond_car_n10_n5_pvalue
+rename bond_car_n5_0_pvalue1 bond_car_n5_0_pvalue
+rename bond_car_0_5_pvalue1 bond_car_0_5_pvalue
+rename bond_car_5_10_pvalue1 bond_car_5_10_pvalue
+rename bond_car_n10_10_pvalue1 bond_car_n10_10_pvalue
+gen type2_id=_n
+order type2_id
+sort type2_id
+save ttestpvalue_isolation_bytype2,replace
+
+use ttestdata_isolation_bytype2,clear
+duplicates drop type2_id,force
+keep type2_id stock_ar_n1_mean stock_ar_0_mean stock_ar_1_mean stock_car_n10_n5_mean stock_car_n5_0_mean stock_car_0_5_mean stock_car_5_10_mean stock_car_n10_10_mean bond_ar_n1_mean bond_ar_0_mean bond_ar_1_mean bond_car_n10_n5_mean bond_car_n5_0_mean bond_car_0_5_mean bond_car_5_10_mean bond_car_n10_10_mean
+save ttestmean_isolation_bytype2,replace
+merge 1:1 type2_id using ttestpvalue_isolation_bytype2
+drop _merge
+order type2_id stock* bond*
+save ttestresult_isolation_bytype2,replace
+
+use ttestresult_isolation_bytype2,clear
+rename type2_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save ttestresult_isolation_bytype2_combined1,replace
+use ttestresult_isolation_bytype2,clear
+rename type2_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save ttestresult_isolation_bytype2_combined2,replace
+use ttestresult_isolation_bytype2_combined1,clear
+append using ttestresult_isolation_bytype2_combined2
+sort vandp
+save ttestresult_isolation_bytype2_combined,replace
+export excel using ttestresult_isolation_bytype2_combined.xls,replace firstrow(variables)
+
+
+
+
+
+
+
+
+
+//**       基于经济数据集       **//
+/*AR、CAR显著性检验：基于国家分组*/
+use ttestdata_economy,clear
+sort region_id regionevent_id
+by region_id:egen tweight=sum(dweight)
+by region_id:egen stock_ar_n1_mean_temp=sum(dweight*stock_ar_n1)
+by region_id:gen stock_ar_n1_mean=stock_ar_n1_mean_temp/tweight
+by region_id:egen stock_ar_0_mean_temp=sum(dweight*stock_ar_0)
+by region_id:gen stock_ar_0_mean=stock_ar_0_mean_temp/tweight
+by region_id:egen stock_ar_1_mean_temp=sum(dweight*stock_ar_1)
+by region_id:gen stock_ar_1_mean=stock_ar_1_mean_temp/tweight
+by region_id:egen stock_car_n10_n5_mean_temp=sum(dweight*stock_car_n10_n5)
+by region_id:gen stock_car_n10_n5_mean=stock_car_n10_n5_mean_temp/tweight
+by region_id:egen stock_car_n5_0_mean_temp=sum(dweight*stock_car_n5_0)
+by region_id:gen stock_car_n5_0_mean=stock_car_n5_0_mean_temp/tweight
+by region_id:egen stock_car_0_5_mean_temp=sum(dweight*stock_car_0_5)
+by region_id:gen stock_car_0_5_mean=stock_car_0_5_mean_temp/tweight
+by region_id:egen stock_car_5_10_mean_temp=sum(dweight*stock_car_5_10)
+by region_id:gen stock_car_5_10_mean=stock_car_5_10_mean_temp/tweight
+by region_id:egen stock_car_n10_10_mean_temp=sum(dweight*stock_car_n10_10)
+by region_id:gen stock_car_n10_10_mean=stock_car_n10_10_mean_temp/tweight
+by region_id:egen bond_ar_n1_mean_temp=sum(dweight*bond_ar_n1)
+by region_id:gen bond_ar_n1_mean=bond_ar_n1_mean_temp/tweight
+by region_id:egen bond_ar_0_mean_temp=sum(dweight*bond_ar_0)
+by region_id:gen bond_ar_0_mean=bond_ar_0_mean_temp/tweight
+by region_id:egen bond_ar_1_mean_temp=sum(dweight*bond_ar_1)
+by region_id:gen bond_ar_1_mean=bond_ar_1_mean_temp/tweight
+by region_id:egen bond_car_n10_n5_mean_temp=sum(dweight*bond_car_n10_n5)
+by region_id:gen bond_car_n10_n5_mean=bond_car_n10_n5_mean_temp/tweight
+by region_id:egen bond_car_n5_0_mean_temp=sum(dweight*bond_car_n5_0)
+by region_id:gen bond_car_n5_0_mean=bond_car_n5_0_mean_temp/tweight
+by region_id:egen bond_car_0_5_mean_temp=sum(dweight*bond_car_0_5)
+by region_id:gen bond_car_0_5_mean=bond_car_0_5_mean_temp/tweight
+by region_id:egen bond_car_5_10_mean_temp=sum(dweight*bond_car_5_10)
+by region_id:gen bond_car_5_10_mean=bond_car_5_10_mean_temp/tweight
+by region_id:egen bond_car_n10_10_mean_temp=sum(dweight*bond_car_n10_10)
+by region_id:gen bond_car_n10_10_mean=bond_car_n10_10_mean_temp/tweight
+drop *_temp
+save ttestdata_economy_byregion,replace
+
+use ttestdata_economy_byregion,clear
+sort region_id regionevent_id
+egen idmax=max(region_id)
+global idmax=idmax
+matrix stock_ar_n1_pvalue=J($idmax,1,.)
+matrix stock_ar_0_pvalue=J($idmax,1,.)
+matrix stock_ar_1_pvalue=J($idmax,1,.)
+matrix stock_car_n10_n5_pvalue=J($idmax,1,.)
+matrix stock_car_n5_0_pvalue=J($idmax,1,.)
+matrix stock_car_0_5_pvalue=J($idmax,1,.)
+matrix stock_car_5_10_pvalue=J($idmax,1,.)
+matrix stock_car_n10_10_pvalue=J($idmax,1,.)
+matrix bond_ar_n1_pvalue=J($idmax,1,.)
+matrix bond_ar_0_pvalue=J($idmax,1,.)
+matrix bond_ar_1_pvalue=J($idmax,1,.)
+matrix bond_car_n10_n5_pvalue=J($idmax,1,.)
+matrix bond_car_n5_0_pvalue=J($idmax,1,.)
+matrix bond_car_0_5_pvalue=J($idmax,1,.)
+matrix bond_car_5_10_pvalue=J($idmax,1,.)
+matrix bond_car_n10_10_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+ttest stock_ar_n1==0 if region_id==`i'
+matrix stock_ar_n1_pvalue[`i',1]=r(p)
+ttest stock_ar_0==0 if region_id==`i'
+matrix stock_ar_0_pvalue[`i',1]=r(p)
+ttest stock_ar_1==0 if region_id==`i'
+matrix stock_ar_1_pvalue[`i',1]=r(p)
+ttest stock_car_n10_n5==0 if region_id==`i'
+matrix stock_car_n10_n5_pvalue[`i',1]=r(p)
+ttest stock_car_n5_0==0 if region_id==`i'
+matrix stock_car_n5_0_pvalue[`i',1]=r(p)
+ttest stock_car_0_5==0 if region_id==`i'
+matrix stock_car_0_5_pvalue[`i',1]=r(p)
+ttest stock_car_5_10==0 if region_id==`i'
+matrix stock_car_5_10_pvalue[`i',1]=r(p)
+ttest stock_car_n10_10==0 if region_id==`i'
+matrix stock_car_n10_10_pvalue[`i',1]=r(p)
+ttest bond_ar_n1==0 if region_id==`i'
+matrix bond_ar_n1_pvalue[`i',1]=r(p)
+ttest bond_ar_0==0 if region_id==`i'
+matrix bond_ar_0_pvalue[`i',1]=r(p)
+ttest bond_ar_1==0 if region_id==`i'
+matrix bond_ar_1_pvalue[`i',1]=r(p)
+ttest bond_car_n10_n5==0 if region_id==`i'
+matrix bond_car_n10_n5_pvalue[`i',1]=r(p)
+ttest bond_car_n5_0==0 if region_id==`i'
+matrix bond_car_n5_0_pvalue[`i',1]=r(p)
+ttest bond_car_0_5==0 if region_id==`i'
+matrix bond_car_0_5_pvalue[`i',1]=r(p)
+ttest bond_car_5_10==0 if region_id==`i'
+matrix bond_car_5_10_pvalue[`i',1]=r(p)
+ttest bond_car_n10_10==0 if region_id==`i'
+matrix bond_car_n10_10_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_ar_n1_pvalue,name(stock_ar_n1_pvalue)
+svmat double stock_ar_0_pvalue,name(stock_ar_0_pvalue)
+svmat double stock_ar_1_pvalue,name(stock_ar_1_pvalue)
+svmat double stock_car_n10_n5_pvalue,name(stock_car_n10_n5_pvalue)
+svmat double stock_car_n5_0_pvalue,name(stock_car_n5_0_pvalue)
+svmat double stock_car_0_5_pvalue,name(stock_car_0_5_pvalue)
+svmat double stock_car_5_10_pvalue,name(stock_car_5_10_pvalue)
+svmat double stock_car_n10_10_pvalue,name(stock_car_n10_10_pvalue)
+svmat double bond_ar_n1_pvalue,name(bond_ar_n1_pvalue)
+svmat double bond_ar_0_pvalue,name(bond_ar_0_pvalue)
+svmat double bond_ar_1_pvalue,name(bond_ar_1_pvalue)
+svmat double bond_car_n10_n5_pvalue,name(bond_car_n10_n5_pvalue)
+svmat double bond_car_n5_0_pvalue,name(bond_car_n5_0_pvalue)
+svmat double bond_car_0_5_pvalue,name(bond_car_0_5_pvalue)
+svmat double bond_car_5_10_pvalue,name(bond_car_5_10_pvalue)
+svmat double bond_car_n10_10_pvalue,name(bond_car_n10_10_pvalue)
+rename stock_ar_n1_pvalue1 stock_ar_n1_pvalue
+rename stock_ar_0_pvalue1 stock_ar_0_pvalue
+rename stock_ar_1_pvalue1 stock_ar_1_pvalue
+rename stock_car_n10_n5_pvalue1 stock_car_n10_n5_pvalue
+rename stock_car_n5_0_pvalue1 stock_car_n5_0_pvalue
+rename stock_car_0_5_pvalue1 stock_car_0_5_pvalue
+rename stock_car_5_10_pvalue1 stock_car_5_10_pvalue
+rename stock_car_n10_10_pvalue1 stock_car_n10_10_pvalue
+rename bond_ar_n1_pvalue1 bond_ar_n1_pvalue
+rename bond_ar_0_pvalue1 bond_ar_0_pvalue
+rename bond_ar_1_pvalue1 bond_ar_1_pvalue
+rename bond_car_n10_n5_pvalue1 bond_car_n10_n5_pvalue
+rename bond_car_n5_0_pvalue1 bond_car_n5_0_pvalue
+rename bond_car_0_5_pvalue1 bond_car_0_5_pvalue
+rename bond_car_5_10_pvalue1 bond_car_5_10_pvalue
+rename bond_car_n10_10_pvalue1 bond_car_n10_10_pvalue
+gen region_id=_n
+order region_id
+sort region_id
+save ttestpvalue_economy_byregion,replace
+
+use ttestdata_economy_byregion,clear
+duplicates drop region_id,force
+keep region_id stock_ar_n1_mean stock_ar_0_mean stock_ar_1_mean stock_car_n10_n5_mean stock_car_n5_0_mean stock_car_0_5_mean stock_car_5_10_mean stock_car_n10_10_mean bond_ar_n1_mean bond_ar_0_mean bond_ar_1_mean bond_car_n10_n5_mean bond_car_n5_0_mean bond_car_0_5_mean bond_car_5_10_mean bond_car_n10_10_mean
+save ttestmean_economy_byregion,replace
+merge 1:1 region_id using ttestpvalue_economy_byregion
+drop _merge
+order region_id stock* bond*
+save ttestresult_economy_byregion,replace
+
+use ttestresult_economy_byregion,clear
+rename region_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save ttestresult_economy_byregion_combined1,replace
+use ttestresult_economy_byregion,clear
+rename region_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save ttestresult_economy_byregion_combined2,replace
+use ttestresult_economy_byregion_combined1,clear
+append using ttestresult_economy_byregion_combined2
+sort vandp
+save ttestresult_economy_byregion_combined,replace
+export excel using ttestresult_economy_byregion_combined.xls,replace firstrow(variables)
+
+/*AR、CAR显著性检验：基于区域分组*/
+use ttestdata_economy,clear
+sort area_id eventdate_id
+by area_id:egen tweight=sum(dweight)
+by area_id:egen stock_ar_n1_mean_temp=sum(dweight*stock_ar_n1)
+by area_id:gen stock_ar_n1_mean=stock_ar_n1_mean_temp/tweight
+by area_id:egen stock_ar_0_mean_temp=sum(dweight*stock_ar_0)
+by area_id:gen stock_ar_0_mean=stock_ar_0_mean_temp/tweight
+by area_id:egen stock_ar_1_mean_temp=sum(dweight*stock_ar_1)
+by area_id:gen stock_ar_1_mean=stock_ar_1_mean_temp/tweight
+by area_id:egen stock_car_n10_n5_mean_temp=sum(dweight*stock_car_n10_n5)
+by area_id:gen stock_car_n10_n5_mean=stock_car_n10_n5_mean_temp/tweight
+by area_id:egen stock_car_n5_0_mean_temp=sum(dweight*stock_car_n5_0)
+by area_id:gen stock_car_n5_0_mean=stock_car_n5_0_mean_temp/tweight
+by area_id:egen stock_car_0_5_mean_temp=sum(dweight*stock_car_0_5)
+by area_id:gen stock_car_0_5_mean=stock_car_0_5_mean_temp/tweight
+by area_id:egen stock_car_5_10_mean_temp=sum(dweight*stock_car_5_10)
+by area_id:gen stock_car_5_10_mean=stock_car_5_10_mean_temp/tweight
+by area_id:egen stock_car_n10_10_mean_temp=sum(dweight*stock_car_n10_10)
+by area_id:gen stock_car_n10_10_mean=stock_car_n10_10_mean_temp/tweight
+by area_id:egen bond_ar_n1_mean_temp=sum(dweight*bond_ar_n1)
+by area_id:gen bond_ar_n1_mean=bond_ar_n1_mean_temp/tweight
+by area_id:egen bond_ar_0_mean_temp=sum(dweight*bond_ar_0)
+by area_id:gen bond_ar_0_mean=bond_ar_0_mean_temp/tweight
+by area_id:egen bond_ar_1_mean_temp=sum(dweight*bond_ar_1)
+by area_id:gen bond_ar_1_mean=bond_ar_1_mean_temp/tweight
+by area_id:egen bond_car_n10_n5_mean_temp=sum(dweight*bond_car_n10_n5)
+by area_id:gen bond_car_n10_n5_mean=bond_car_n10_n5_mean_temp/tweight
+by area_id:egen bond_car_n5_0_mean_temp=sum(dweight*bond_car_n5_0)
+by area_id:gen bond_car_n5_0_mean=bond_car_n5_0_mean_temp/tweight
+by area_id:egen bond_car_0_5_mean_temp=sum(dweight*bond_car_0_5)
+by area_id:gen bond_car_0_5_mean=bond_car_0_5_mean_temp/tweight
+by area_id:egen bond_car_5_10_mean_temp=sum(dweight*bond_car_5_10)
+by area_id:gen bond_car_5_10_mean=bond_car_5_10_mean_temp/tweight
+by area_id:egen bond_car_n10_10_mean_temp=sum(dweight*bond_car_n10_10)
+by area_id:gen bond_car_n10_10_mean=bond_car_n10_10_mean_temp/tweight
+drop *_temp
+save ttestdata_economy_byarea,replace
+
+use ttestdata_economy_byarea,clear
+sort area_id eventdate_id
+egen idmax=max(area_id)
+global idmax=idmax
+matrix stock_ar_n1_pvalue=J($idmax,1,.)
+matrix stock_ar_0_pvalue=J($idmax,1,.)
+matrix stock_ar_1_pvalue=J($idmax,1,.)
+matrix stock_car_n10_n5_pvalue=J($idmax,1,.)
+matrix stock_car_n5_0_pvalue=J($idmax,1,.)
+matrix stock_car_0_5_pvalue=J($idmax,1,.)
+matrix stock_car_5_10_pvalue=J($idmax,1,.)
+matrix stock_car_n10_10_pvalue=J($idmax,1,.)
+matrix bond_ar_n1_pvalue=J($idmax,1,.)
+matrix bond_ar_0_pvalue=J($idmax,1,.)
+matrix bond_ar_1_pvalue=J($idmax,1,.)
+matrix bond_car_n10_n5_pvalue=J($idmax,1,.)
+matrix bond_car_n5_0_pvalue=J($idmax,1,.)
+matrix bond_car_0_5_pvalue=J($idmax,1,.)
+matrix bond_car_5_10_pvalue=J($idmax,1,.)
+matrix bond_car_n10_10_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+ttest stock_ar_n1==0 if area_id==`i'
+matrix stock_ar_n1_pvalue[`i',1]=r(p)
+ttest stock_ar_0==0 if area_id==`i'
+matrix stock_ar_0_pvalue[`i',1]=r(p)
+ttest stock_ar_1==0 if area_id==`i'
+matrix stock_ar_1_pvalue[`i',1]=r(p)
+ttest stock_car_n10_n5==0 if area_id==`i'
+matrix stock_car_n10_n5_pvalue[`i',1]=r(p)
+ttest stock_car_n5_0==0 if area_id==`i'
+matrix stock_car_n5_0_pvalue[`i',1]=r(p)
+ttest stock_car_0_5==0 if area_id==`i'
+matrix stock_car_0_5_pvalue[`i',1]=r(p)
+ttest stock_car_5_10==0 if area_id==`i'
+matrix stock_car_5_10_pvalue[`i',1]=r(p)
+ttest stock_car_n10_10==0 if area_id==`i'
+matrix stock_car_n10_10_pvalue[`i',1]=r(p)
+ttest bond_ar_n1==0 if area_id==`i'
+matrix bond_ar_n1_pvalue[`i',1]=r(p)
+ttest bond_ar_0==0 if area_id==`i'
+matrix bond_ar_0_pvalue[`i',1]=r(p)
+ttest bond_ar_1==0 if area_id==`i'
+matrix bond_ar_1_pvalue[`i',1]=r(p)
+ttest bond_car_n10_n5==0 if area_id==`i'
+matrix bond_car_n10_n5_pvalue[`i',1]=r(p)
+ttest bond_car_n5_0==0 if area_id==`i'
+matrix bond_car_n5_0_pvalue[`i',1]=r(p)
+ttest bond_car_0_5==0 if area_id==`i'
+matrix bond_car_0_5_pvalue[`i',1]=r(p)
+ttest bond_car_5_10==0 if area_id==`i'
+matrix bond_car_5_10_pvalue[`i',1]=r(p)
+ttest bond_car_n10_10==0 if area_id==`i'
+matrix bond_car_n10_10_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_ar_n1_pvalue,name(stock_ar_n1_pvalue)
+svmat double stock_ar_0_pvalue,name(stock_ar_0_pvalue)
+svmat double stock_ar_1_pvalue,name(stock_ar_1_pvalue)
+svmat double stock_car_n10_n5_pvalue,name(stock_car_n10_n5_pvalue)
+svmat double stock_car_n5_0_pvalue,name(stock_car_n5_0_pvalue)
+svmat double stock_car_0_5_pvalue,name(stock_car_0_5_pvalue)
+svmat double stock_car_5_10_pvalue,name(stock_car_5_10_pvalue)
+svmat double stock_car_n10_10_pvalue,name(stock_car_n10_10_pvalue)
+svmat double bond_ar_n1_pvalue,name(bond_ar_n1_pvalue)
+svmat double bond_ar_0_pvalue,name(bond_ar_0_pvalue)
+svmat double bond_ar_1_pvalue,name(bond_ar_1_pvalue)
+svmat double bond_car_n10_n5_pvalue,name(bond_car_n10_n5_pvalue)
+svmat double bond_car_n5_0_pvalue,name(bond_car_n5_0_pvalue)
+svmat double bond_car_0_5_pvalue,name(bond_car_0_5_pvalue)
+svmat double bond_car_5_10_pvalue,name(bond_car_5_10_pvalue)
+svmat double bond_car_n10_10_pvalue,name(bond_car_n10_10_pvalue)
+rename stock_ar_n1_pvalue1 stock_ar_n1_pvalue
+rename stock_ar_0_pvalue1 stock_ar_0_pvalue
+rename stock_ar_1_pvalue1 stock_ar_1_pvalue
+rename stock_car_n10_n5_pvalue1 stock_car_n10_n5_pvalue
+rename stock_car_n5_0_pvalue1 stock_car_n5_0_pvalue
+rename stock_car_0_5_pvalue1 stock_car_0_5_pvalue
+rename stock_car_5_10_pvalue1 stock_car_5_10_pvalue
+rename stock_car_n10_10_pvalue1 stock_car_n10_10_pvalue
+rename bond_ar_n1_pvalue1 bond_ar_n1_pvalue
+rename bond_ar_0_pvalue1 bond_ar_0_pvalue
+rename bond_ar_1_pvalue1 bond_ar_1_pvalue
+rename bond_car_n10_n5_pvalue1 bond_car_n10_n5_pvalue
+rename bond_car_n5_0_pvalue1 bond_car_n5_0_pvalue
+rename bond_car_0_5_pvalue1 bond_car_0_5_pvalue
+rename bond_car_5_10_pvalue1 bond_car_5_10_pvalue
+rename bond_car_n10_10_pvalue1 bond_car_n10_10_pvalue
+gen area_id=_n
+order area_id
+sort area_id
+save ttestpvalue_economy_byarea,replace
+
+use ttestdata_economy_byarea,clear
+duplicates drop area_id,force
+keep area_id stock_ar_n1_mean stock_ar_0_mean stock_ar_1_mean stock_car_n10_n5_mean stock_car_n5_0_mean stock_car_0_5_mean stock_car_5_10_mean stock_car_n10_10_mean bond_ar_n1_mean bond_ar_0_mean bond_ar_1_mean bond_car_n10_n5_mean bond_car_n5_0_mean bond_car_0_5_mean bond_car_5_10_mean bond_car_n10_10_mean
+save ttestmean_economy_byarea,replace
+merge 1:1 area_id using ttestpvalue_economy_byarea
+drop _merge
+order area_id stock* bond*
+save ttestresult_economy_byarea,replace
+
+use ttestresult_economy_byarea,clear
+rename area_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save ttestresult_economy_byarea_combined1,replace
+use ttestresult_economy_byarea,clear
+rename area_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save ttestresult_economy_byarea_combined2,replace
+use ttestresult_economy_byarea_combined1,clear
+append using ttestresult_economy_byarea_combined2
+sort vandp
+save ttestresult_economy_byarea_combined,replace
+export excel using ttestresult_economy_byarea_combined.xls,replace firstrow(variables)
+
+/*AR、CAR显著性检验：全球（或称基于Type1）*/
+use ttestdata_economy,clear
+sort eventdate_id
+egen tweight=sum(dweight)
+egen stock_ar_n1_mean_temp=sum(dweight*stock_ar_n1)
+gen stock_ar_n1_mean=stock_ar_n1_mean_temp/tweight
+egen stock_ar_0_mean_temp=sum(dweight*stock_ar_0)
+gen stock_ar_0_mean=stock_ar_0_mean_temp/tweight
+egen stock_ar_1_mean_temp=sum(dweight*stock_ar_1)
+gen stock_ar_1_mean=stock_ar_1_mean_temp/tweight
+egen stock_car_n10_n5_mean_temp=sum(dweight*stock_car_n10_n5)
+gen stock_car_n10_n5_mean=stock_car_n10_n5_mean_temp/tweight
+egen stock_car_n5_0_mean_temp=sum(dweight*stock_car_n5_0)
+gen stock_car_n5_0_mean=stock_car_n5_0_mean_temp/tweight
+egen stock_car_0_5_mean_temp=sum(dweight*stock_car_0_5)
+gen stock_car_0_5_mean=stock_car_0_5_mean_temp/tweight
+egen stock_car_5_10_mean_temp=sum(dweight*stock_car_5_10)
+gen stock_car_5_10_mean=stock_car_5_10_mean_temp/tweight
+egen stock_car_n10_10_mean_temp=sum(dweight*stock_car_n10_10)
+gen stock_car_n10_10_mean=stock_car_n10_10_mean_temp/tweight
+egen bond_ar_n1_mean_temp=sum(dweight*bond_ar_n1)
+gen bond_ar_n1_mean=bond_ar_n1_mean_temp/tweight
+egen bond_ar_0_mean_temp=sum(dweight*bond_ar_0)
+gen bond_ar_0_mean=bond_ar_0_mean_temp/tweight
+egen bond_ar_1_mean_temp=sum(dweight*bond_ar_1)
+gen bond_ar_1_mean=bond_ar_1_mean_temp/tweight
+egen bond_car_n10_n5_mean_temp=sum(dweight*bond_car_n10_n5)
+gen bond_car_n10_n5_mean=bond_car_n10_n5_mean_temp/tweight
+egen bond_car_n5_0_mean_temp=sum(dweight*bond_car_n5_0)
+gen bond_car_n5_0_mean=bond_car_n5_0_mean_temp/tweight
+egen bond_car_0_5_mean_temp=sum(dweight*bond_car_0_5)
+gen bond_car_0_5_mean=bond_car_0_5_mean_temp/tweight
+egen bond_car_5_10_mean_temp=sum(dweight*bond_car_5_10)
+gen bond_car_5_10_mean=bond_car_5_10_mean_temp/tweight
+egen bond_car_n10_10_mean_temp=sum(dweight*bond_car_n10_10)
+gen bond_car_n10_10_mean=bond_car_n10_10_mean_temp/tweight
+drop *_temp
+save ttestdata_economy_global,replace
+
+use ttestdata_economy_global,clear
+sort eventdate_id
+gen idmax=1
+global idmax=idmax
+matrix stock_ar_n1_pvalue=J($idmax,1,.)
+matrix stock_ar_0_pvalue=J($idmax,1,.)
+matrix stock_ar_1_pvalue=J($idmax,1,.)
+matrix stock_car_n10_n5_pvalue=J($idmax,1,.)
+matrix stock_car_n5_0_pvalue=J($idmax,1,.)
+matrix stock_car_0_5_pvalue=J($idmax,1,.)
+matrix stock_car_5_10_pvalue=J($idmax,1,.)
+matrix stock_car_n10_10_pvalue=J($idmax,1,.)
+matrix bond_ar_n1_pvalue=J($idmax,1,.)
+matrix bond_ar_0_pvalue=J($idmax,1,.)
+matrix bond_ar_1_pvalue=J($idmax,1,.)
+matrix bond_car_n10_n5_pvalue=J($idmax,1,.)
+matrix bond_car_n5_0_pvalue=J($idmax,1,.)
+matrix bond_car_0_5_pvalue=J($idmax,1,.)
+matrix bond_car_5_10_pvalue=J($idmax,1,.)
+matrix bond_car_n10_10_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+ttest stock_ar_n1==0
+matrix stock_ar_n1_pvalue[`i',1]=r(p)
+ttest stock_ar_0==0
+matrix stock_ar_0_pvalue[`i',1]=r(p)
+ttest stock_ar_1==0
+matrix stock_ar_1_pvalue[`i',1]=r(p)
+ttest stock_car_n10_n5==0
+matrix stock_car_n10_n5_pvalue[`i',1]=r(p)
+ttest stock_car_n5_0==0
+matrix stock_car_n5_0_pvalue[`i',1]=r(p)
+ttest stock_car_0_5==0
+matrix stock_car_0_5_pvalue[`i',1]=r(p)
+ttest stock_car_5_10==0
+matrix stock_car_5_10_pvalue[`i',1]=r(p)
+ttest stock_car_n10_10==0
+matrix stock_car_n10_10_pvalue[`i',1]=r(p)
+ttest bond_ar_n1==0
+matrix bond_ar_n1_pvalue[`i',1]=r(p)
+ttest bond_ar_0==0
+matrix bond_ar_0_pvalue[`i',1]=r(p)
+ttest bond_ar_1==0
+matrix bond_ar_1_pvalue[`i',1]=r(p)
+ttest bond_car_n10_n5==0
+matrix bond_car_n10_n5_pvalue[`i',1]=r(p)
+ttest bond_car_n5_0==0
+matrix bond_car_n5_0_pvalue[`i',1]=r(p)
+ttest bond_car_0_5==0
+matrix bond_car_0_5_pvalue[`i',1]=r(p)
+ttest bond_car_5_10==0
+matrix bond_car_5_10_pvalue[`i',1]=r(p)
+ttest bond_car_n10_10==0
+matrix bond_car_n10_10_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_ar_n1_pvalue,name(stock_ar_n1_pvalue)
+svmat double stock_ar_0_pvalue,name(stock_ar_0_pvalue)
+svmat double stock_ar_1_pvalue,name(stock_ar_1_pvalue)
+svmat double stock_car_n10_n5_pvalue,name(stock_car_n10_n5_pvalue)
+svmat double stock_car_n5_0_pvalue,name(stock_car_n5_0_pvalue)
+svmat double stock_car_0_5_pvalue,name(stock_car_0_5_pvalue)
+svmat double stock_car_5_10_pvalue,name(stock_car_5_10_pvalue)
+svmat double stock_car_n10_10_pvalue,name(stock_car_n10_10_pvalue)
+svmat double bond_ar_n1_pvalue,name(bond_ar_n1_pvalue)
+svmat double bond_ar_0_pvalue,name(bond_ar_0_pvalue)
+svmat double bond_ar_1_pvalue,name(bond_ar_1_pvalue)
+svmat double bond_car_n10_n5_pvalue,name(bond_car_n10_n5_pvalue)
+svmat double bond_car_n5_0_pvalue,name(bond_car_n5_0_pvalue)
+svmat double bond_car_0_5_pvalue,name(bond_car_0_5_pvalue)
+svmat double bond_car_5_10_pvalue,name(bond_car_5_10_pvalue)
+svmat double bond_car_n10_10_pvalue,name(bond_car_n10_10_pvalue)
+rename stock_ar_n1_pvalue1 stock_ar_n1_pvalue
+rename stock_ar_0_pvalue1 stock_ar_0_pvalue
+rename stock_ar_1_pvalue1 stock_ar_1_pvalue
+rename stock_car_n10_n5_pvalue1 stock_car_n10_n5_pvalue
+rename stock_car_n5_0_pvalue1 stock_car_n5_0_pvalue
+rename stock_car_0_5_pvalue1 stock_car_0_5_pvalue
+rename stock_car_5_10_pvalue1 stock_car_5_10_pvalue
+rename stock_car_n10_10_pvalue1 stock_car_n10_10_pvalue
+rename bond_ar_n1_pvalue1 bond_ar_n1_pvalue
+rename bond_ar_0_pvalue1 bond_ar_0_pvalue
+rename bond_ar_1_pvalue1 bond_ar_1_pvalue
+rename bond_car_n10_n5_pvalue1 bond_car_n10_n5_pvalue
+rename bond_car_n5_0_pvalue1 bond_car_n5_0_pvalue
+rename bond_car_0_5_pvalue1 bond_car_0_5_pvalue
+rename bond_car_5_10_pvalue1 bond_car_5_10_pvalue
+rename bond_car_n10_10_pvalue1 bond_car_n10_10_pvalue
+gen area_id=6
+order area_id
+sort area_id
+save ttestpvalue_economy_global,replace
+
+use ttestdata_economy_global,clear
+keep in 1
+keep area_id stock_ar_n1_mean stock_ar_0_mean stock_ar_1_mean stock_car_n10_n5_mean stock_car_n5_0_mean stock_car_0_5_mean stock_car_5_10_mean stock_car_n10_10_mean bond_ar_n1_mean bond_ar_0_mean bond_ar_1_mean bond_car_n10_n5_mean bond_car_n5_0_mean bond_car_0_5_mean bond_car_5_10_mean bond_car_n10_10_mean
+replace area_id=6
+save ttestmean_economy_global,replace
+merge 1:1 area_id using ttestpvalue_economy_global
+drop _merge
+order area_id stock* bond*
+save ttestresult_economy_global,replace
+
+use ttestresult_economy_global,clear
+rename area_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save ttestresult_economy_global_combined1,replace
+use ttestresult_economy_global,clear
+rename area_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save ttestresult_economy_global_combined2,replace
+use ttestresult_economy_global_combined1,clear
+append using ttestresult_economy_global_combined2
+sort vandp
+save ttestresult_economy_global_combined,replace
+export excel using ttestresult_economy_global_combined.xls,replace firstrow(variables)
+
+/*AR、CAR显著性检验：基于Type2分组*/
+use ttestdata_economy,clear
+sort type1 type2
+merge m:1 type2 using eventtype_economy
+drop _merge count
+sort type2_id eventdate_id
+
+by type2_id:egen tweight=sum(dweight)
+by type2_id:egen stock_ar_n1_mean_temp=sum(dweight*stock_ar_n1)
+by type2_id:gen stock_ar_n1_mean=stock_ar_n1_mean_temp/tweight
+by type2_id:egen stock_ar_0_mean_temp=sum(dweight*stock_ar_0)
+by type2_id:gen stock_ar_0_mean=stock_ar_0_mean_temp/tweight
+by type2_id:egen stock_ar_1_mean_temp=sum(dweight*stock_ar_1)
+by type2_id:gen stock_ar_1_mean=stock_ar_1_mean_temp/tweight
+by type2_id:egen stock_car_n10_n5_mean_temp=sum(dweight*stock_car_n10_n5)
+by type2_id:gen stock_car_n10_n5_mean=stock_car_n10_n5_mean_temp/tweight
+by type2_id:egen stock_car_n5_0_mean_temp=sum(dweight*stock_car_n5_0)
+by type2_id:gen stock_car_n5_0_mean=stock_car_n5_0_mean_temp/tweight
+by type2_id:egen stock_car_0_5_mean_temp=sum(dweight*stock_car_0_5)
+by type2_id:gen stock_car_0_5_mean=stock_car_0_5_mean_temp/tweight
+by type2_id:egen stock_car_5_10_mean_temp=sum(dweight*stock_car_5_10)
+by type2_id:gen stock_car_5_10_mean=stock_car_5_10_mean_temp/tweight
+by type2_id:egen stock_car_n10_10_mean_temp=sum(dweight*stock_car_n10_10)
+by type2_id:gen stock_car_n10_10_mean=stock_car_n10_10_mean_temp/tweight
+by type2_id:egen bond_ar_n1_mean_temp=sum(dweight*bond_ar_n1)
+by type2_id:gen bond_ar_n1_mean=bond_ar_n1_mean_temp/tweight
+by type2_id:egen bond_ar_0_mean_temp=sum(dweight*bond_ar_0)
+by type2_id:gen bond_ar_0_mean=bond_ar_0_mean_temp/tweight
+by type2_id:egen bond_ar_1_mean_temp=sum(dweight*bond_ar_1)
+by type2_id:gen bond_ar_1_mean=bond_ar_1_mean_temp/tweight
+by type2_id:egen bond_car_n10_n5_mean_temp=sum(dweight*bond_car_n10_n5)
+by type2_id:gen bond_car_n10_n5_mean=bond_car_n10_n5_mean_temp/tweight
+by type2_id:egen bond_car_n5_0_mean_temp=sum(dweight*bond_car_n5_0)
+by type2_id:gen bond_car_n5_0_mean=bond_car_n5_0_mean_temp/tweight
+by type2_id:egen bond_car_0_5_mean_temp=sum(dweight*bond_car_0_5)
+by type2_id:gen bond_car_0_5_mean=bond_car_0_5_mean_temp/tweight
+by type2_id:egen bond_car_5_10_mean_temp=sum(dweight*bond_car_5_10)
+by type2_id:gen bond_car_5_10_mean=bond_car_5_10_mean_temp/tweight
+by type2_id:egen bond_car_n10_10_mean_temp=sum(dweight*bond_car_n10_10)
+by type2_id:gen bond_car_n10_10_mean=bond_car_n10_10_mean_temp/tweight
+drop *_temp
+save ttestdata_economy_bytype2,replace
+
+use ttestdata_economy_bytype2,clear
+sort type2_id eventdate_id
+egen idmax=max(type2_id)
+global idmax=idmax
+matrix stock_ar_n1_pvalue=J($idmax,1,.)
+matrix stock_ar_0_pvalue=J($idmax,1,.)
+matrix stock_ar_1_pvalue=J($idmax,1,.)
+matrix stock_car_n10_n5_pvalue=J($idmax,1,.)
+matrix stock_car_n5_0_pvalue=J($idmax,1,.)
+matrix stock_car_0_5_pvalue=J($idmax,1,.)
+matrix stock_car_5_10_pvalue=J($idmax,1,.)
+matrix stock_car_n10_10_pvalue=J($idmax,1,.)
+matrix bond_ar_n1_pvalue=J($idmax,1,.)
+matrix bond_ar_0_pvalue=J($idmax,1,.)
+matrix bond_ar_1_pvalue=J($idmax,1,.)
+matrix bond_car_n10_n5_pvalue=J($idmax,1,.)
+matrix bond_car_n5_0_pvalue=J($idmax,1,.)
+matrix bond_car_0_5_pvalue=J($idmax,1,.)
+matrix bond_car_5_10_pvalue=J($idmax,1,.)
+matrix bond_car_n10_10_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+display "-------------------------------------------"
+display "id=",`i'
+capture noisily ttest stock_ar_n1==0 if type2_id==`i'
+matrix stock_ar_n1_pvalue[`i',1]=r(p)
+capture noisily ttest stock_ar_0==0 if type2_id==`i'
+matrix stock_ar_0_pvalue[`i',1]=r(p)
+capture noisily ttest stock_ar_1==0 if type2_id==`i'
+matrix stock_ar_1_pvalue[`i',1]=r(p)
+capture noisily ttest stock_car_n10_n5==0 if type2_id==`i'
+matrix stock_car_n10_n5_pvalue[`i',1]=r(p)
+capture noisily ttest stock_car_n5_0==0 if type2_id==`i'
+matrix stock_car_n5_0_pvalue[`i',1]=r(p)
+capture noisily ttest stock_car_0_5==0 if type2_id==`i'
+matrix stock_car_0_5_pvalue[`i',1]=r(p)
+capture noisily ttest stock_car_5_10==0 if type2_id==`i'
+matrix stock_car_5_10_pvalue[`i',1]=r(p)
+capture noisily ttest stock_car_n10_10==0 if type2_id==`i'
+matrix stock_car_n10_10_pvalue[`i',1]=r(p)
+capture noisily ttest bond_ar_n1==0 if type2_id==`i'
+matrix bond_ar_n1_pvalue[`i',1]=r(p)
+capture noisily ttest bond_ar_0==0 if type2_id==`i'
+matrix bond_ar_0_pvalue[`i',1]=r(p)
+capture noisily ttest bond_ar_1==0 if type2_id==`i'
+matrix bond_ar_1_pvalue[`i',1]=r(p)
+capture noisily ttest bond_car_n10_n5==0 if type2_id==`i'
+matrix bond_car_n10_n5_pvalue[`i',1]=r(p)
+capture noisily ttest bond_car_n5_0==0 if type2_id==`i'
+matrix bond_car_n5_0_pvalue[`i',1]=r(p)
+capture noisily ttest bond_car_0_5==0 if type2_id==`i'
+matrix bond_car_0_5_pvalue[`i',1]=r(p)
+capture noisily ttest bond_car_5_10==0 if type2_id==`i'
+matrix bond_car_5_10_pvalue[`i',1]=r(p)
+capture noisily ttest bond_car_n10_10==0 if type2_id==`i'
+matrix bond_car_n10_10_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_ar_n1_pvalue,name(stock_ar_n1_pvalue)
+svmat double stock_ar_0_pvalue,name(stock_ar_0_pvalue)
+svmat double stock_ar_1_pvalue,name(stock_ar_1_pvalue)
+svmat double stock_car_n10_n5_pvalue,name(stock_car_n10_n5_pvalue)
+svmat double stock_car_n5_0_pvalue,name(stock_car_n5_0_pvalue)
+svmat double stock_car_0_5_pvalue,name(stock_car_0_5_pvalue)
+svmat double stock_car_5_10_pvalue,name(stock_car_5_10_pvalue)
+svmat double stock_car_n10_10_pvalue,name(stock_car_n10_10_pvalue)
+svmat double bond_ar_n1_pvalue,name(bond_ar_n1_pvalue)
+svmat double bond_ar_0_pvalue,name(bond_ar_0_pvalue)
+svmat double bond_ar_1_pvalue,name(bond_ar_1_pvalue)
+svmat double bond_car_n10_n5_pvalue,name(bond_car_n10_n5_pvalue)
+svmat double bond_car_n5_0_pvalue,name(bond_car_n5_0_pvalue)
+svmat double bond_car_0_5_pvalue,name(bond_car_0_5_pvalue)
+svmat double bond_car_5_10_pvalue,name(bond_car_5_10_pvalue)
+svmat double bond_car_n10_10_pvalue,name(bond_car_n10_10_pvalue)
+rename stock_ar_n1_pvalue1 stock_ar_n1_pvalue
+rename stock_ar_0_pvalue1 stock_ar_0_pvalue
+rename stock_ar_1_pvalue1 stock_ar_1_pvalue
+rename stock_car_n10_n5_pvalue1 stock_car_n10_n5_pvalue
+rename stock_car_n5_0_pvalue1 stock_car_n5_0_pvalue
+rename stock_car_0_5_pvalue1 stock_car_0_5_pvalue
+rename stock_car_5_10_pvalue1 stock_car_5_10_pvalue
+rename stock_car_n10_10_pvalue1 stock_car_n10_10_pvalue
+rename bond_ar_n1_pvalue1 bond_ar_n1_pvalue
+rename bond_ar_0_pvalue1 bond_ar_0_pvalue
+rename bond_ar_1_pvalue1 bond_ar_1_pvalue
+rename bond_car_n10_n5_pvalue1 bond_car_n10_n5_pvalue
+rename bond_car_n5_0_pvalue1 bond_car_n5_0_pvalue
+rename bond_car_0_5_pvalue1 bond_car_0_5_pvalue
+rename bond_car_5_10_pvalue1 bond_car_5_10_pvalue
+rename bond_car_n10_10_pvalue1 bond_car_n10_10_pvalue
+gen type2_id=_n
+order type2_id
+sort type2_id
+save ttestpvalue_economy_bytype2,replace
+
+use ttestdata_economy_bytype2,clear
+duplicates drop type2_id,force
+keep type2_id stock_ar_n1_mean stock_ar_0_mean stock_ar_1_mean stock_car_n10_n5_mean stock_car_n5_0_mean stock_car_0_5_mean stock_car_5_10_mean stock_car_n10_10_mean bond_ar_n1_mean bond_ar_0_mean bond_ar_1_mean bond_car_n10_n5_mean bond_car_n5_0_mean bond_car_0_5_mean bond_car_5_10_mean bond_car_n10_10_mean
+save ttestmean_economy_bytype2,replace
+merge 1:1 type2_id using ttestpvalue_economy_bytype2
+drop _merge
+order type2_id stock* bond*
+save ttestresult_economy_bytype2,replace
+
+use ttestresult_economy_bytype2,clear
+rename type2_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save ttestresult_economy_bytype2_combined1,replace
+use ttestresult_economy_bytype2,clear
+rename type2_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save ttestresult_economy_bytype2_combined2,replace
+use ttestresult_economy_bytype2_combined1,clear
+append using ttestresult_economy_bytype2_combined2
+sort vandp
+save ttestresult_economy_bytype2_combined,replace
+export excel using ttestresult_economy_bytype2_combined.xls,replace firstrow(variables)
+
+
+/*GARCH显著性检验：数据准备*/
+use paneldata_isolation,clear
+keep if windows==1
+drop tweight
+sort eventdate_id dif
+by eventdate_id:egen stock_garch=mean(sqrt(stockgarch))
+by eventdate_id:egen bond_garch=mean(sqrt(bondgarch))
+duplicates drop eventdate_id,force
+save eventgarchdata_isolation,replace
+
+use paneldata_economy,clear
+keep if windows==1
+drop tweight
+sort eventdate_id dif
+by eventdate_id:egen stock_garch=mean(sqrt(stockgarch))
+by eventdate_id:egen bond_garch=mean(sqrt(bondgarch))
+duplicates drop eventdate_id,force
+save eventgarchdata_economy,replace
+
+
+//**      基于隔离数据集      **//
+/*GARCH显著性检验：基于国家分组*/
+use eventgarchdata_isolation,clear
+sort region_id regionevent_id
+by region_id:egen tweight=sum(dweight)
+by region_id:egen stock_garch_mean_temp=sum(dweight*stock_garch)
+by region_id:gen stock_garch_mean=stock_garch_mean_temp/tweight
+by region_id:egen bond_garch_mean_temp=sum(dweight*bond_garch)
+by region_id:gen bond_garch_mean=bond_garch_mean_temp/tweight
+save eventgarchdata_isolation_byregion,replace
+
+use eventgarchdata_isolation_byregion,clear
+sort region_id regionevent_id
+egen idmax=max(region_id)
+global idmax=idmax
+matrix stock_garch_pvalue=J($idmax,1,.)
+matrix bond_garch_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+ttest stock_garch==0 if region_id==`i'
+matrix stock_garch_pvalue[`i',1]=r(p)
+}
+forvalues i=1/10 {
+ttest bond_garch==0 if region_id==`i'
+matrix bond_garch_pvalue[`i',1]=r(p)
+}
+forvalues i=12/$idmax {
+ttest bond_garch==0 if region_id==`i'
+matrix bond_garch_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_garch_pvalue,name(stock_garch_pvalue)
+svmat double bond_garch_pvalue,name(bond_garch_pvalue)
+rename stock_garch_pvalue1 stock_garch_pvalue
+rename bond_garch_pvalue1 bond_garch_pvalue
+gen region_id=_n
+order region_id
+sort region_id
+save eventgarchpvalue_isolation_byregion,replace
+
+use eventgarchdata_isolation_byregion,clear
+duplicates drop region_id,force
+keep region_id stock_garch_mean bond_garch_mean
+save eventgarchmean_isolation_byregion,replace
+merge 1:1 region_id using eventgarchpvalue_isolation_byregion
+drop _merge
+order region_id stock* bond*
+save eventgarchresult_isolation_byregion,replace
+
+use eventgarchresult_isolation_byregion,clear
+rename region_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save eventgarchresult_isolation_byregion_combined1,replace
+use eventgarchresult_isolation_byregion,clear
+rename region_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save eventgarchresult_isolation_byregion_combined2,replace
+use eventgarchresult_isolation_byregion_combined1,clear
+append using eventgarchresult_isolation_byregion_combined2
+sort vandp
+save eventgarchresult_isolation_byregion_combined,replace
+export excel using eventgarchresult_isolation_byregion_combined.xls,replace firstrow(variables)
+
+/*GARCH显著性检验：基于区域分组*/
+use eventgarchdata_isolation,clear
+sort area_id eventdate_id
+by area_id:egen tweight=sum(dweight)
+by area_id:egen stock_garch_mean_temp=sum(dweight*stock_garch)
+by area_id:gen stock_garch_mean=stock_garch_mean_temp/tweight
+by area_id:egen bond_garch_mean_temp=sum(dweight*bond_garch)
+by area_id:gen bond_garch_mean=bond_garch_mean_temp/tweight
+save eventgarchdata_isolation_byarea,replace
+
+use eventgarchdata_isolation_byarea,clear
+sort area_id eventdate_id
+egen idmax=max(area_id)
+global idmax=idmax
+matrix stock_garch_pvalue=J($idmax,1,.)
+matrix bond_garch_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+ttest stock_garch==0 if area_id==`i'
+matrix stock_garch_pvalue[`i',1]=r(p)
+}
+forvalues i=1/$idmax {
+ttest bond_garch==0 if area_id==`i'
+matrix bond_garch_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_garch_pvalue,name(stock_garch_pvalue)
+svmat double bond_garch_pvalue,name(bond_garch_pvalue)
+rename stock_garch_pvalue1 stock_garch_pvalue
+rename bond_garch_pvalue1 bond_garch_pvalue
+gen area_id=_n
+order area_id
+sort area_id
+save eventgarchpvalue_isolation_byarea,replace
+
+use eventgarchdata_isolation_byarea,clear
+duplicates drop area_id,force
+keep area_id stock_garch_mean bond_garch_mean
+save eventgarchmean_isolation_byarea,replace
+merge 1:1 area_id using eventgarchpvalue_isolation_byarea
+drop _merge
+order area_id stock* bond*
+save eventgarchresult_isolation_byarea,replace
+
+use eventgarchresult_isolation_byarea,clear
+rename area_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save eventgarchresult_isolation_byarea_combined1,replace
+use eventgarchresult_isolation_byarea,clear
+rename area_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save eventgarchresult_isolation_byarea_combined2,replace
+use eventgarchresult_isolation_byarea_combined1,clear
+append using eventgarchresult_isolation_byarea_combined2
+sort vandp
+save eventgarchresult_isolation_byarea_combined,replace
+export excel using eventgarchresult_isolation_byarea_combined.xls,replace firstrow(variables)
+
+
+/*GARCH显著性检验：基于全球（或称Type1）分组*/
+use eventgarchdata_isolation,clear
+sort eventdate_id
+egen tweight=sum(dweight)
+egen stock_garch_mean_temp=sum(dweight*stock_garch)
+gen stock_garch_mean=stock_garch_mean_temp/tweight
+egen bond_garch_mean_temp=sum(dweight*bond_garch)
+gen bond_garch_mean=bond_garch_mean_temp/tweight
+save eventgarchdata_isolation_global,replace
+
+use eventgarchdata_isolation_global,clear
+sort eventdate_id
+gen idmax=1
+global idmax=idmax
+matrix stock_garch_pvalue=J($idmax,1,.)
+matrix bond_garch_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+ttest stock_garch==0
+matrix stock_garch_pvalue[`i',1]=r(p)
+}
+forvalues i=1/$idmax {
+ttest bond_garch==0
+matrix bond_garch_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_garch_pvalue,name(stock_garch_pvalue)
+svmat double bond_garch_pvalue,name(bond_garch_pvalue)
+rename stock_garch_pvalue1 stock_garch_pvalue
+rename bond_garch_pvalue1 bond_garch_pvalue
+gen area_id=6
+order area_id
+sort area_id
+save eventgarchpvalue_isolation_global,replace
+
+use eventgarchdata_isolation_global,clear
+keep in 1
+keep area_id stock_garch_mean bond_garch_mean
+replace area_id=6
+save eventgarchmean_isolation_global,replace
+merge 1:1 area_id using eventgarchpvalue_isolation_global
+drop _merge
+order area_id stock* bond*
+save eventgarchresult_isolation_global,replace
+
+use eventgarchresult_isolation_global,clear
+rename area_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save eventgarchresult_isolation_global_combined1,replace
+use eventgarchresult_isolation_global,clear
+rename area_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save eventgarchresult_isolation_global_combined2,replace
+use eventgarchresult_isolation_global_combined1,clear
+append using eventgarchresult_isolation_global_combined2
+sort vandp
+save eventgarchresult_isolation_global_combined,replace
+export excel using eventgarchresult_isolation_global_combined.xls,replace firstrow(variables)
+
+/*GARCH显著性检验：基于Type2分组*/
+use eventgarchdata_isolation,clear
+sort type1 type2
+merge m:1 type2 using eventtype_isolation
+drop _merge count
+sort type2_id eventdate_id
+
+by type2_id:egen tweight=sum(dweight)
+by type2_id:egen stock_garch_mean_temp=sum(dweight*stock_garch)
+by type2_id:gen stock_garch_mean=stock_garch_mean_temp/tweight
+by type2_id:egen bond_garch_mean_temp=sum(dweight*bond_garch)
+by type2_id:gen bond_garch_mean=bond_garch_mean_temp/tweight
+save eventgarchdata_isolation_bytype2,replace
+
+use eventgarchdata_isolation_bytype2,clear
+sort type2_id eventdate_id
+egen idmax=max(type2_id)
+global idmax=idmax
+matrix stock_garch_pvalue=J($idmax,1,.)
+matrix bond_garch_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+ttest stock_garch==0 if type2_id==`i'
+matrix stock_garch_pvalue[`i',1]=r(p)
+}
+forvalues i=1/$idmax {
+ttest bond_garch==0 if type2_id==`i'
+matrix bond_garch_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_garch_pvalue,name(stock_garch_pvalue)
+svmat double bond_garch_pvalue,name(bond_garch_pvalue)
+rename stock_garch_pvalue1 stock_garch_pvalue
+rename bond_garch_pvalue1 bond_garch_pvalue
+gen type2_id=_n
+order type2_id
+sort type2_id
+save eventgarchpvalue_isolation_bytype2,replace
+
+use eventgarchdata_isolation_bytype2,clear
+duplicates drop type2_id,force
+keep type2_id stock_garch_mean bond_garch_mean
+save eventgarchmean_isolation_bytype2,replace
+merge 1:1 type2_id using eventgarchpvalue_isolation_bytype2
+drop _merge
+order type2_id stock* bond*
+save eventgarchresult_isolation_bytype2,replace
+
+use eventgarchresult_isolation_bytype2,clear
+rename type2_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save eventgarchresult_isolation_bytype2_combined1,replace
+use eventgarchresult_isolation_bytype2,clear
+rename type2_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save eventgarchresult_isolation_bytype2_combined2,replace
+use eventgarchresult_isolation_bytype2_combined1,clear
+append using eventgarchresult_isolation_bytype2_combined2
+sort vandp
+save eventgarchresult_isolation_bytype2_combined,replace
+export excel using eventgarchresult_isolation_bytype2_combined.xls,replace firstrow(variables)
+
+
+
+
+//**      基于经济数据集      **//
+/*GARCH显著性检验：基于国家分组*/
+use eventgarchdata_economy,clear
+sort region_id regionevent_id
+by region_id:egen tweight=sum(dweight)
+by region_id:egen stock_garch_mean_temp=sum(dweight*stock_garch)
+by region_id:gen stock_garch_mean=stock_garch_mean_temp/tweight
+by region_id:egen bond_garch_mean_temp=sum(dweight*bond_garch)
+by region_id:gen bond_garch_mean=bond_garch_mean_temp/tweight
+save eventgarchdata_economy_byregion,replace
+
+use eventgarchdata_economy_byregion,clear
+sort region_id regionevent_id
+egen idmax=max(region_id)
+global idmax=idmax
+matrix stock_garch_pvalue=J($idmax,1,.)
+matrix bond_garch_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+ttest stock_garch==0 if region_id==`i'
+matrix stock_garch_pvalue[`i',1]=r(p)
+}
+forvalues i=1/10 {
+ttest bond_garch==0 if region_id==`i'
+matrix bond_garch_pvalue[`i',1]=r(p)
+}
+forvalues i=12/$idmax {
+ttest bond_garch==0 if region_id==`i'
+matrix bond_garch_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_garch_pvalue,name(stock_garch_pvalue)
+svmat double bond_garch_pvalue,name(bond_garch_pvalue)
+rename stock_garch_pvalue1 stock_garch_pvalue
+rename bond_garch_pvalue1 bond_garch_pvalue
+gen region_id=_n
+order region_id
+sort region_id
+save eventgarchpvalue_economy_byregion,replace
+
+use eventgarchdata_economy_byregion,clear
+duplicates drop region_id,force
+keep region_id stock_garch_mean bond_garch_mean
+save eventgarchmean_economy_byregion,replace
+merge 1:1 region_id using eventgarchpvalue_economy_byregion
+drop _merge
+order region_id stock* bond*
+save eventgarchresult_economy_byregion,replace
+
+use eventgarchresult_economy_byregion,clear
+rename region_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save eventgarchresult_economy_byregion_combined1,replace
+use eventgarchresult_economy_byregion,clear
+rename region_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save eventgarchresult_economy_byregion_combined2,replace
+use eventgarchresult_economy_byregion_combined1,clear
+append using eventgarchresult_economy_byregion_combined2
+sort vandp
+save eventgarchresult_economy_byregion_combined,replace
+export excel using eventgarchresult_economy_byregion_combined.xls,replace firstrow(variables)
+
+/*GARCH显著性检验：基于区域分组*/
+use eventgarchdata_economy,clear
+sort area_id eventdate_id
+by area_id:egen tweight=sum(dweight)
+by area_id:egen stock_garch_mean_temp=sum(dweight*stock_garch)
+by area_id:gen stock_garch_mean=stock_garch_mean_temp/tweight
+by area_id:egen bond_garch_mean_temp=sum(dweight*bond_garch)
+by area_id:gen bond_garch_mean=bond_garch_mean_temp/tweight
+save eventgarchdata_economy_byarea,replace
+
+use eventgarchdata_economy_byarea,clear
+sort area_id eventdate_id
+egen idmax=max(area_id)
+global idmax=idmax
+matrix stock_garch_pvalue=J($idmax,1,.)
+matrix bond_garch_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+ttest stock_garch==0 if area_id==`i'
+matrix stock_garch_pvalue[`i',1]=r(p)
+}
+forvalues i=1/$idmax {
+ttest bond_garch==0 if area_id==`i'
+matrix bond_garch_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_garch_pvalue,name(stock_garch_pvalue)
+svmat double bond_garch_pvalue,name(bond_garch_pvalue)
+rename stock_garch_pvalue1 stock_garch_pvalue
+rename bond_garch_pvalue1 bond_garch_pvalue
+gen area_id=_n
+order area_id
+sort area_id
+save eventgarchpvalue_economy_byarea,replace
+
+use eventgarchdata_economy_byarea,clear
+duplicates drop area_id,force
+keep area_id stock_garch_mean bond_garch_mean
+save eventgarchmean_economy_byarea,replace
+merge 1:1 area_id using eventgarchpvalue_economy_byarea
+drop _merge
+order area_id stock* bond*
+save eventgarchresult_economy_byarea,replace
+
+use eventgarchresult_economy_byarea,clear
+rename area_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save eventgarchresult_economy_byarea_combined1,replace
+use eventgarchresult_economy_byarea,clear
+rename area_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save eventgarchresult_economy_byarea_combined2,replace
+use eventgarchresult_economy_byarea_combined1,clear
+append using eventgarchresult_economy_byarea_combined2
+sort vandp
+save eventgarchresult_economy_byarea_combined,replace
+export excel using eventgarchresult_economy_byarea_combined.xls,replace firstrow(variables)
+
+
+/*GARCH显著性检验：基于全球（或称Type1）分组*/
+use eventgarchdata_economy,clear
+sort eventdate_id
+egen tweight=sum(dweight)
+egen stock_garch_mean_temp=sum(dweight*stock_garch)
+gen stock_garch_mean=stock_garch_mean_temp/tweight
+egen bond_garch_mean_temp=sum(dweight*bond_garch)
+gen bond_garch_mean=bond_garch_mean_temp/tweight
+save eventgarchdata_economy_global,replace
+
+use eventgarchdata_economy_global,clear
+sort eventdate_id
+gen idmax=1
+global idmax=idmax
+matrix stock_garch_pvalue=J($idmax,1,.)
+matrix bond_garch_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+ttest stock_garch==0
+matrix stock_garch_pvalue[`i',1]=r(p)
+}
+forvalues i=1/$idmax {
+ttest bond_garch==0
+matrix bond_garch_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_garch_pvalue,name(stock_garch_pvalue)
+svmat double bond_garch_pvalue,name(bond_garch_pvalue)
+rename stock_garch_pvalue1 stock_garch_pvalue
+rename bond_garch_pvalue1 bond_garch_pvalue
+gen area_id=6
+order area_id
+sort area_id
+save eventgarchpvalue_economy_global,replace
+
+use eventgarchdata_economy_global,clear
+keep in 1
+keep area_id stock_garch_mean bond_garch_mean
+replace area_id=6
+save eventgarchmean_economy_global,replace
+merge 1:1 area_id using eventgarchpvalue_economy_global
+drop _merge
+order area_id stock* bond*
+save eventgarchresult_economy_global,replace
+
+use eventgarchresult_economy_global,clear
+rename area_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save eventgarchresult_economy_global_combined1,replace
+use eventgarchresult_economy_global,clear
+rename area_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save eventgarchresult_economy_global_combined2,replace
+use eventgarchresult_economy_global_combined1,clear
+append using eventgarchresult_economy_global_combined2
+sort vandp
+save eventgarchresult_economy_global_combined,replace
+export excel using eventgarchresult_economy_global_combined.xls,replace firstrow(variables)
+
+/*GARCH显著性检验：基于Type2分组*/
+use eventgarchdata_economy,clear
+sort type1 type2
+merge m:1 type2 using eventtype_economy
+drop _merge count
+sort type2_id eventdate_id
+
+by type2_id:egen tweight=sum(dweight)
+by type2_id:egen stock_garch_mean_temp=sum(dweight*stock_garch)
+by type2_id:gen stock_garch_mean=stock_garch_mean_temp/tweight
+by type2_id:egen bond_garch_mean_temp=sum(dweight*bond_garch)
+by type2_id:gen bond_garch_mean=bond_garch_mean_temp/tweight
+save eventgarchdata_economy_bytype2,replace
+
+use eventgarchdata_economy_bytype2,clear
+sort type2_id eventdate_id
+egen idmax=max(type2_id)
+global idmax=idmax
+matrix stock_garch_pvalue=J($idmax,1,.)
+matrix bond_garch_pvalue=J($idmax,1,.)
+
+set more off
+forvalues i=1/$idmax {
+ttest stock_garch==0 if type2_id==`i'
+matrix stock_garch_pvalue[`i',1]=r(p)
+}
+forvalues i=1/$idmax {
+ttest bond_garch==0 if type2_id==`i'
+matrix bond_garch_pvalue[`i',1]=r(p)
+}
+drop *
+svmat double stock_garch_pvalue,name(stock_garch_pvalue)
+svmat double bond_garch_pvalue,name(bond_garch_pvalue)
+rename stock_garch_pvalue1 stock_garch_pvalue
+rename bond_garch_pvalue1 bond_garch_pvalue
+gen type2_id=_n
+order type2_id
+sort type2_id
+save eventgarchpvalue_economy_bytype2,replace
+
+use eventgarchdata_economy_bytype2,clear
+duplicates drop type2_id,force
+keep type2_id stock_garch_mean bond_garch_mean
+save eventgarchmean_economy_bytype2,replace
+merge 1:1 type2_id using eventgarchpvalue_economy_bytype2
+drop _merge
+order type2_id stock* bond*
+save eventgarchresult_economy_bytype2,replace
+
+use eventgarchresult_economy_bytype2,clear
+rename type2_id vandp
+replace vandp=2*vandp-1
+rename *_mean *
+drop *_pvalue
+save eventgarchresult_economy_bytype2_combined1,replace
+use eventgarchresult_economy_bytype2,clear
+rename type2_id vandp
+replace vandp=2*vandp
+rename *_pvalue *
+drop *_mean
+save eventgarchresult_economy_bytype2_combined2,replace
+use eventgarchresult_economy_bytype2_combined1,clear
+append using eventgarchresult_economy_bytype2_combined2
+sort vandp
+save eventgarchresult_economy_bytype2_combined,replace
+export excel using eventgarchresult_economy_bytype2_combined.xls,replace firstrow(variables)
+
+
+
+
+/*AR、CAR分阶段作图：数据准备*/
+use paneldata_isolation,clear
+keep if windows==1
+drop tweight
+sort eventdate_id dif
+gen eventperiod_temp=.
+replace eventperiod_temp=1 if dif==0 & period_id==1
+replace eventperiod_temp=2 if dif==0 & period_id==2
+replace eventperiod_temp=3 if dif==0 & period_id==3
+replace eventperiod_temp=4 if dif==0 & period_id==4
+by eventdate_id:egen eventperiod_id=mean(eventperiod_temp)
+drop eventperiod_temp
+sort region_id eventperiod_id dif
+egen region_eventperiod_id=group(region_id eventperiod_id)
+sort region_eventperiod_id dif
+by region_eventperiod_id dif:egen tweight=sum(dweight)
+by region_eventperiod_id dif:egen stock_ar_tsum=sum(dweight*stock_ar)
+by region_eventperiod_id dif:gen stock_ar_avg=stock_ar_tsum/tweight
+by region_eventperiod_id dif:egen stock_car_tsum=sum(dweight*stock_car)
+by region_eventperiod_id dif:gen stock_car_avg=stock_car_tsum/tweight
+by region_eventperiod_id dif:egen bond_ar_tsum=sum(dweight*bond_ar)
+by region_eventperiod_id dif:gen bond_ar_avg=bond_ar_tsum/tweight
+by region_eventperiod_id dif:egen bond_car_tsum=sum(dweight*bond_car)
+by region_eventperiod_id dif:gen bond_car_avg=bond_car_tsum/tweight
+drop stock_ar_tsum bond_car_tsum
+duplicates drop region_eventperiod_id dif,force
+sort region_eventperiod_id dif
+save arcargraph_byperiod_isolation,replace
+
+use paneldata_economy,clear
+keep if windows==1
+drop tweight
+sort eventdate_id dif
+gen eventperiod_temp=.
+replace eventperiod_temp=1 if dif==0 & period_id==1
+replace eventperiod_temp=2 if dif==0 & period_id==2
+replace eventperiod_temp=3 if dif==0 & period_id==3
+replace eventperiod_temp=4 if dif==0 & period_id==4
+by eventdate_id:egen eventperiod_id=mean(eventperiod_temp)
+drop eventperiod_temp
+sort region_id eventperiod_id dif
+egen region_eventperiod_id=group(region_id eventperiod_id)
+sort region_eventperiod_id dif
+by region_eventperiod_id dif:egen tweight=sum(dweight)
+by region_eventperiod_id dif:egen stock_ar_tsum=sum(dweight*stock_ar)
+by region_eventperiod_id dif:gen stock_ar_avg=stock_ar_tsum/tweight
+by region_eventperiod_id dif:egen stock_car_tsum=sum(dweight*stock_car)
+by region_eventperiod_id dif:gen stock_car_avg=stock_car_tsum/tweight
+by region_eventperiod_id dif:egen bond_ar_tsum=sum(dweight*bond_ar)
+by region_eventperiod_id dif:gen bond_ar_avg=bond_ar_tsum/tweight
+by region_eventperiod_id dif:egen bond_car_tsum=sum(dweight*bond_car)
+by region_eventperiod_id dif:gen bond_car_avg=bond_car_tsum/tweight
+drop stock_ar_tsum bond_car_tsum
+duplicates drop region_eventperiod_id dif,force
+sort region_eventperiod_id dif
+save arcargraph_byperiod_economy,replace
+
+/*AR、CAR分阶段作图：分开输出已废弃*/
+//绘图：隔离数据集-股票市场AR
+use arcargraph_byperiod_isolation,clear
+keep if eventperiod_id==1
+line stock_ar_avg dif,by(area region) xline(0) xtitle("股票市场异常收益") ytitle("Stock_AR_avg") saving(isolation_stock_ar_global_period1,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间（潜伏期）：隔离政策") 
+graph use isolation_stock_ar_global_period1
+graph export isolation_stock_ar_global_period1.png, as(png) replace
+
+use arcargraph_byperiod_isolation,clear
+keep if eventperiod_id==2
+line stock_ar_avg dif,by(area region) xline(0) xtitle("股票市场异常收益") ytitle("Stock_AR_avg") saving(isolation_stock_ar_global_period2,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间（爆发期）：隔离政策") 
+graph use isolation_stock_ar_global_period2
+graph export isolation_stock_ar_global_period2.png, as(png) replace
+
+use arcargraph_byperiod_isolation,clear
+keep if eventperiod_id==3
+line stock_ar_avg dif,by(area region) xline(0) xtitle("股票市场异常收益") ytitle("Stock_AR_avg") saving(isolation_stock_ar_global_period3,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间（平稳期）：隔离政策") 
+graph use isolation_stock_ar_global_period3
+graph export isolation_stock_ar_global_period3.png, as(png) replace
+
+use arcargraph_byperiod_isolation,clear
+keep if eventperiod_id==4
+line stock_ar_avg dif,by(area region) xline(0) xtitle("股票市场异常收益") ytitle("Stock_AR_avg") saving(isolation_stock_ar_global_period4,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间（消退期）：隔离政策") 
+graph use isolation_stock_ar_global_period4
+graph export isolation_stock_ar_global_period4.png, as(png) replace
+
+
+//绘图：隔离数据集-股票市场CAR
+use arcargraph_byperiod_isolation,clear
+keep if eventperiod_id==1
+line stock_car_avg dif,by(area region) xline(0) xtitle("股票市场累计异常收益") ytitle("Stock_CAR_avg") saving(isolation_stock_car_global_period1,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间（潜伏期）：隔离政策") 
+graph use isolation_stock_car_global_period1
+graph export isolation_stock_car_global_period1.png, as(png) replace
+
+use arcargraph_byperiod_isolation,clear
+keep if eventperiod_id==2
+line stock_car_avg dif,by(area region) xline(0) xtitle("股票市场累计异常收益") ytitle("Stock_CAR_avg") saving(isolation_stock_car_global_period2,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间（爆发期）：隔离政策") 
+graph use isolation_stock_car_global_period2
+graph export isolation_stock_car_global_period2.png, as(png) replace
+
+use arcargraph_byperiod_isolation,clear
+keep if eventperiod_id==3
+line stock_car_avg dif,by(area region) xline(0) xtitle("股票市场累计异常收益") ytitle("Stock_CAR_avg") saving(isolation_stock_car_global_period3,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间（平稳期）：隔离政策") 
+graph use isolation_stock_car_global_period3
+graph export isolation_stock_car_global_period3.png, as(png) replace
+
+use arcargraph_byperiod_isolation,clear
+keep if eventperiod_id==4
+line stock_car_avg dif,by(area region) xline(0) xtitle("股票市场累计异常收益") ytitle("Stock_CAR_avg") saving(isolation_stock_car_global_period4,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间（消退期）：隔离政策") 
+graph use isolation_stock_car_global_period4
+graph export isolation_stock_car_global_period4.png, as(png) replace
+
+//绘图：隔离数据集-债券市场AR
+//阿根廷清零
+use arcargraph_byperiod_isolation,clear
+replace bond_ar_avg=0 if region=="阿根廷"
+keep if eventperiod_id==1
+line bond_ar_avg dif,by(area region) xline(0) xtitle("债券市场异常收益") ytitle("Bond_AR_avg") saving(isolation_bond_ar_global_period1,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间（潜伏期）：隔离政策") 
+graph use isolation_bond_ar_global_period1
+graph export isolation_bond_ar_global_period1.png, as(png) replace
+//阿根廷重绘并PS进去
+use arcargraph_byperiod_isolation,clear
+keep if region=="阿根廷"
+keep if eventperiod_id==1
+line bond_ar_avg dif,by(area region) xline(0) xtitle("阿根廷债券市场异常收益") ytitle("Bond_AR_avg") saving(isolation_bond_ar_argentina_period1,replace)
+
+//阿根廷清零
+use arcargraph_byperiod_isolation,clear
+replace bond_ar_avg=0 if region=="阿根廷"
+keep if eventperiod_id==2
+line bond_ar_avg dif,by(area region) xline(0) xtitle("债券市场异常收益") ytitle("Bond_AR_avg") saving(isolation_bond_ar_global_period2,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间（爆发期）：隔离政策") 
+graph use isolation_bond_ar_global_period2
+graph export isolation_bond_ar_global_period2.png, as(png) replace
+//阿根廷重绘并PS进去
+use arcargraph_byperiod_isolation,clear
+keep if region=="阿根廷"
+keep if eventperiod_id==2
+line bond_ar_avg dif,by(area region) xline(0) xtitle("阿根廷债券市场异常收益") ytitle("Bond_AR_avg") saving(isolation_bond_ar_argentina_period2,replace)
+
+//阿根廷清零
+use arcargraph_byperiod_isolation,clear
+replace bond_ar_avg=0 if region=="阿根廷"
+keep if eventperiod_id==3
+line bond_ar_avg dif,by(area region) xline(0) xtitle("债券市场异常收益") ytitle("Bond_AR_avg") saving(isolation_bond_ar_global_period3,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间（爆发期）：隔离政策") 
+graph use isolation_bond_ar_global_period3
+graph export isolation_bond_ar_global_period3.png, as(png) replace
+//阿根廷重绘并PS进去
+use arcargraph_byperiod_isolation,clear
+keep if region=="阿根廷"
+keep if eventperiod_id==3
+line bond_ar_avg dif,by(area region) xline(0) xtitle("阿根廷债券市场异常收益") ytitle("Bond_AR_avg") saving(isolation_bond_ar_argentina_period3,replace)
+
+//阿根廷清零
+use arcargraph_byperiod_isolation,clear
+replace bond_ar_avg=0 if region=="阿根廷"
+keep if eventperiod_id==4
+line bond_ar_avg dif,by(area region) xline(0) xtitle("债券市场异常收益") ytitle("Bond_AR_avg") saving(isolation_bond_ar_global_period4,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间（爆发期）：隔离政策") 
+graph use isolation_bond_ar_global_period4
+graph export isolation_bond_ar_global_period4.png, as(png) replace
+//阿根廷重绘并PS进去
+use arcargraph_byperiod_isolation,clear
+keep if region=="阿根廷"
+keep if eventperiod_id==4
+line bond_ar_avg dif,by(area region) xline(0) xtitle("阿根廷债券市场异常收益") ytitle("Bond_AR_avg") saving(isolation_bond_ar_argentina_period4,replace)
+
+/*AR、CAR分阶段作图：叠加输出*/
+//绘图：隔离数据集-股票市场AR
+use arcargraph_byperiod_isolation,clear
+line stock_ar_avg dif if eventperiod_id==1||line stock_ar_avg dif if eventperiod_id==2||line stock_ar_avg dif if eventperiod_id==3||line stock_ar_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("股票市场异常收益") ytitle("Stock_AR_avg") saving(isolation_stock_ar_global_byperiod,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：隔离政策") ，再修改legend后保存（4列显示，字号Small，"潜伏期，爆发期，平稳期，消退期"）
+graph use isolation_stock_ar_global_byperiod
+graph export isolation_stock_ar_global_byperiod.png, as(png) replace
+
+//绘图：隔离数据集-股票市场CAR
+use arcargraph_byperiod_isolation,clear
+line stock_car_avg dif if eventperiod_id==1||line stock_car_avg dif if eventperiod_id==2||line stock_car_avg dif if eventperiod_id==3||line stock_car_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("股票市场累计异常收益") ytitle("Stock_CAR_avg") saving(isolation_stock_car_global_byperiod,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：隔离政策") ，再修改legend后保存（4列显示，字号Small，"潜伏期，爆发期，平稳期，消退期"）
+graph use isolation_stock_car_global_byperiod
+graph export isolation_stock_car_global_byperiod.png, as(png) replace
+
+//绘图：隔离数据集-债券市场AR
+//阿根廷清零
+use arcargraph_byperiod_isolation,clear
+replace bond_ar_avg=0 if region=="阿根廷"
+line bond_ar_avg dif if eventperiod_id==1||line bond_ar_avg dif if eventperiod_id==2||line bond_ar_avg dif if eventperiod_id==3||line bond_ar_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("债券市场异常收益") ytitle("Bond_AR_avg") saving(isolation_bond_ar_global_byperiod,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：隔离政策") ，再修改legend后保存（4列显示，字号Small，"潜伏期，爆发期，平稳期，消退期"）
+graph use isolation_bond_ar_global_byperiod
+graph export isolation_bond_ar_global_byperiod.png, as(png) replace
+//阿根廷重绘并PS进去
+use arcargraph_byperiod_isolation,clear
+keep if region=="阿根廷"
+line bond_ar_avg dif if eventperiod_id==1||line bond_ar_avg dif if eventperiod_id==2||line bond_ar_avg dif if eventperiod_id==3||line bond_ar_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("阿根廷债券市场异常收益") ytitle("Bond_AR_avg") saving(isolation_bond_ar_argentina_byperiod,replace)
+
+//绘图：隔离数据集-债券市场CAR
+//阿根廷清零
+use arcargraph_byperiod_isolation,clear
+replace bond_car_avg=0 if region=="阿根廷"
+line bond_car_avg dif if eventperiod_id==1||line bond_car_avg dif if eventperiod_id==2||line bond_car_avg dif if eventperiod_id==3||line bond_car_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("债券市场累计异常收益") ytitle("Bond_CAR_avg") saving(isolation_bond_car_global_byperiod,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：隔离政策") ，再修改legend后保存（4列显示，字号Small，"潜伏期，爆发期，平稳期，消退期"）
+graph use isolation_bond_car_global_byperiod
+graph export isolation_bond_car_global_byperiod.png, as(png) replace
+//阿根廷重绘并PS进去
+use arcargraph_byperiod_isolation,clear
+keep if region=="阿根廷"
+line bond_car_avg dif if eventperiod_id==1||line bond_car_avg dif if eventperiod_id==2||line bond_car_avg dif if eventperiod_id==3||line bond_car_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("阿根廷债券市场累计异常收益") ytitle("Bond_CAR_avg") saving(isolation_bond_car_argentina_byperiod,replace)
+
+
+
+
+
+//绘图：经济数据集-股票市场AR
+use arcargraph_byperiod_economy,clear
+line stock_ar_avg dif if eventperiod_id==1||line stock_ar_avg dif if eventperiod_id==2||line stock_ar_avg dif if eventperiod_id==3||line stock_ar_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("股票市场异常收益") ytitle("Stock_AR_avg") saving(economy_stock_ar_global_byperiod,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：经济政策") ，再修改legend后保存（4列显示，字号Small，"潜伏期，爆发期，平稳期，消退期"）
+graph use economy_stock_ar_global_byperiod
+graph export economy_stock_ar_global_byperiod.png, as(png) replace
+
+//绘图：经济数据集-股票市场CAR
+use arcargraph_byperiod_economy,clear
+line stock_car_avg dif if eventperiod_id==1||line stock_car_avg dif if eventperiod_id==2||line stock_car_avg dif if eventperiod_id==3||line stock_car_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("股票市场累计异常收益") ytitle("Stock_CAR_avg") saving(economy_stock_car_global_byperiod,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：经济政策") ，再修改legend后保存（4列显示，字号Small，"潜伏期，爆发期，平稳期，消退期"）
+graph use economy_stock_car_global_byperiod
+graph export economy_stock_car_global_byperiod.png, as(png) replace
+
+//绘图：经济数据集-债券市场AR
+//阿根廷清零
+use arcargraph_byperiod_economy,clear
+replace bond_ar_avg=0 if region=="阿根廷"
+line bond_ar_avg dif if eventperiod_id==1||line bond_ar_avg dif if eventperiod_id==2||line bond_ar_avg dif if eventperiod_id==3||line bond_ar_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("债券市场异常收益") ytitle("Bond_AR_avg") saving(economy_bond_ar_global_byperiod,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：经济政策") ，再修改legend后保存（4列显示，字号Small，"潜伏期，爆发期，平稳期，消退期"）
+graph use economy_bond_ar_global_byperiod
+graph export economy_bond_ar_global_byperiod.png, as(png) replace
+//阿根廷重绘并PS进去
+use arcargraph_byperiod_economy,clear
+keep if region=="阿根廷"
+line bond_ar_avg dif if eventperiod_id==1||line bond_ar_avg dif if eventperiod_id==2||line bond_ar_avg dif if eventperiod_id==3||line bond_ar_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("阿根廷债券市场异常收益") ytitle("Bond_AR_avg") saving(economy_bond_ar_argentina_byperiod,replace)
+
+//绘图：经济数据集-债券市场CAR
+//阿根廷清零
+use arcargraph_byperiod_economy,clear
+replace bond_car_avg=0 if region=="阿根廷"
+line bond_car_avg dif if eventperiod_id==1||line bond_car_avg dif if eventperiod_id==2||line bond_car_avg dif if eventperiod_id==3||line bond_car_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("债券市场累计异常收益") ytitle("Bond_CAR_avg") saving(economy_bond_car_global_byperiod,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：经济政策") ，再修改legend后保存（4列显示，字号Small，"潜伏期，爆发期，平稳期，消退期"）
+graph use economy_bond_car_global_byperiod
+graph export economy_bond_car_global_byperiod.png, as(png) replace
+//阿根廷重绘并PS进去
+use arcargraph_byperiod_economy,clear
+keep if region=="阿根廷"
+line bond_car_avg dif if eventperiod_id==1||line bond_car_avg dif if eventperiod_id==2||line bond_car_avg dif if eventperiod_id==3||line bond_car_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("阿根廷债券市场累计异常收益") ytitle("Bond_CAR_avg") saving(economy_bond_car_argentina_byperiod,replace)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+/*GARCH分阶段作图：数据准备*/
+use paneldata_isolation,clear
+keep if windows==1
+drop tweight
+sort eventdate_id dif
+gen eventperiod_temp=.
+replace eventperiod_temp=1 if dif==0 & period_id==1
+replace eventperiod_temp=2 if dif==0 & period_id==2
+replace eventperiod_temp=3 if dif==0 & period_id==3
+replace eventperiod_temp=4 if dif==0 & period_id==4
+by eventdate_id:egen eventperiod_id=mean(eventperiod_temp)
+drop eventperiod_temp
+sort region_id eventperiod_id dif
+egen region_eventperiod_id=group(region_id eventperiod_id)
+sort region_eventperiod_id dif
+by region_eventperiod_id dif:egen tweight=sum(dweight)
+by region_eventperiod_id dif:egen stock_garch_tsum=sum(dweight*stockgarch)
+by region_eventperiod_id dif:gen stock_garch_avg=stock_garch_tsum/tweight
+by region_eventperiod_id dif:egen bond_garch_tsum=sum(dweight*bondgarch)
+by region_eventperiod_id dif:gen bond_garch_avg=bond_garch_tsum/tweight
+drop stock_garch_tsum bond_garch_tsum
+duplicates drop region_eventperiod_id dif,force
+sort region_eventperiod_id dif
+save garchgraph_byperiod_isolation,replace
+
+use paneldata_economy,clear
+keep if windows==1
+drop tweight
+sort eventdate_id dif
+gen eventperiod_temp=.
+replace eventperiod_temp=1 if dif==0 & period_id==1
+replace eventperiod_temp=2 if dif==0 & period_id==2
+replace eventperiod_temp=3 if dif==0 & period_id==3
+replace eventperiod_temp=4 if dif==0 & period_id==4
+by eventdate_id:egen eventperiod_id=mean(eventperiod_temp)
+drop eventperiod_temp
+sort region_id eventperiod_id dif
+egen region_eventperiod_id=group(region_id eventperiod_id)
+sort region_eventperiod_id dif
+by region_eventperiod_id dif:egen tweight=sum(dweight)
+by region_eventperiod_id dif:egen stock_garch_tsum=sum(dweight*stockgarch)
+by region_eventperiod_id dif:gen stock_garch_avg=stock_garch_tsum/tweight
+by region_eventperiod_id dif:egen bond_garch_tsum=sum(dweight*bondgarch)
+by region_eventperiod_id dif:gen bond_garch_avg=bond_garch_tsum/tweight
+drop stock_garch_tsum bond_garch_tsum
+duplicates drop region_eventperiod_id dif,force
+sort region_eventperiod_id dif
+save garchgraph_byperiod_economy,replace
+
+/*GARCH分阶段作图：叠加输出*/
+//绘图：隔离数据集-股票市场GARCH
+use garchgraph_byperiod_isolation,clear
+line stock_garch_avg dif if eventperiod_id==1||line stock_garch_avg dif if eventperiod_id==2||line stock_garch_avg dif if eventperiod_id==3||line stock_garch_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("股票市场动态波动率") ytitle("Stock_GARCH_avg") saving(isolation_stock_garch_global_byperiod,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：隔离政策") ，再修改legend后保存（4列显示，字号Small，"潜伏期，爆发期，平稳期，消退期"）
+graph use isolation_stock_garch_global_byperiod
+graph export isolation_stock_garch_global_byperiod.png, as(png) replace
+
+//绘图：隔离数据集-债券市场GARCH
+//阿根廷清零
+use garchgraph_byperiod_isolation,clear
+replace bond_garch_avg=0 if region=="阿根廷"
+line bond_garch_avg dif if eventperiod_id==1||line bond_garch_avg dif if eventperiod_id==2||line bond_garch_avg dif if eventperiod_id==3||line bond_garch_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("债券市场动态波动率") ytitle("Bond_GARCH_avg") saving(isolation_bond_garch_global_byperiod,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：隔离政策") ，再修改legend后保存（4列显示，字号Small，"潜伏期，爆发期，平稳期，消退期"）
+graph use isolation_bond_garch_global_byperiod
+graph export isolation_bond_garch_global_byperiod.png, as(png) replace
+//阿根廷重绘并PS进去
+use garchgraph_byperiod_isolation,clear
+keep if region=="阿根廷"
+line bond_garch_avg dif if eventperiod_id==1||line bond_garch_avg dif if eventperiod_id==2||line bond_garch_avg dif if eventperiod_id==3||line bond_garch_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("阿根廷债券市场动态波动率") ytitle("Bond_GARCH_avg") saving(isolation_bond_garch_argentina_byperiod,replace)
+
+//绘图：经济数据集-股票市场GARCH
+use garchgraph_byperiod_economy,clear
+line stock_garch_avg dif if eventperiod_id==1||line stock_garch_avg dif if eventperiod_id==2||line stock_garch_avg dif if eventperiod_id==3||line stock_garch_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("股票市场动态波动率") ytitle("Stock_GARCH_avg") saving(economy_stock_garch_global_byperiod,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：经济政策") ，再修改legend后保存（4列显示，字号Small，"潜伏期，爆发期，平稳期，消退期"）
+graph use economy_stock_garch_global_byperiod
+graph export economy_stock_garch_global_byperiod.png, as(png) replace
+
+//绘图：经济数据集-债券市场GARCH
+//阿根廷清零
+use garchgraph_byperiod_economy,clear
+replace bond_garch_avg=0 if region=="阿根廷"
+line bond_garch_avg dif if eventperiod_id==1||line bond_garch_avg dif if eventperiod_id==2||line bond_garch_avg dif if eventperiod_id==3||line bond_garch_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("债券市场动态波动率") ytitle("Bond_GARCH_avg") saving(economy_bond_garch_global_byperiod,replace)
+//然后打开图片编辑器，修改图片note后保存("疫情期间：经济政策") ，再修改legend后保存（4列显示，字号Small，"潜伏期，爆发期，平稳期，消退期"）
+graph use economy_bond_garch_global_byperiod
+graph export economy_bond_garch_global_byperiod.png, as(png) replace
+//阿根廷重绘并PS进去
+use garchgraph_byperiod_economy,clear
+keep if region=="阿根廷"
+line bond_garch_avg dif if eventperiod_id==1||line bond_garch_avg dif if eventperiod_id==2||line bond_garch_avg dif if eventperiod_id==3||line bond_garch_avg dif if eventperiod_id==4,by(area region) xline(0) xtitle("阿根廷债券市场动态波动率") ytitle("Bond_GARCH_avg") saving(economy_bond_garch_argentina_byperiod,replace)
